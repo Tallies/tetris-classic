@@ -1,0 +1,12 @@
+# Keep the build context small and avoid copying host-built binaries.
+.git
+.github
+tetris
+tetris.exe
+tetris-server
+tetris-server.exe
+*.o
+*.obj
+dist/
+*.tar.gz
+*.zip

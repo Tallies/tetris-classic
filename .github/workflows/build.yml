@@ -17,6 +17,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # Pinned Odin release for reproducible builds. Must be a real Odin release
+  # tag (https://github.com/odin-lang/Odin/releases); bump deliberately.
+  ODIN_VERSION: dev-2026-06
+
 jobs:
   build:
     name: ${{ matrix.name }}
@@ -56,7 +61,7 @@ jobs:
       - name: Install Odin
         uses: laytan/setup-odin@v2
         with:
-          release: latest
+          release: ${{ env.ODIN_VERSION }}
 
       # Fast feedback: the pure-logic and networking tests need no display.
       - name: Test

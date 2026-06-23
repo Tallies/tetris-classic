@@ -119,6 +119,26 @@ Then point both clients' server address at the VM's public IP or hostname. Lobbi
 are in-memory and ephemeral (no database, no accounts); restart clears them. For
 always-on use, run it under a process manager (systemd / a container).
 
+### Docker
+
+A self-contained image is provided (`server/Dockerfile`) — build it from the repo
+root:
+
+```sh
+docker build -f server/Dockerfile -t tetris-server .
+docker run --rm -p 7777:7777 tetris-server          # or: ... tetris-server 9000
+```
+
+The first build is slow because it compiles the Odin toolchain from source
+(pinned via the `ODIN_REF` build arg) so the binary matches the runtime image's
+glibc. For ARM hosts, build with `docker buildx --platform linux/arm64`.
+
+### Continuous builds
+
+`.github/workflows/build.yml` builds native client + server binaries for Linux,
+Windows, and macOS (Intel + Apple Silicon) on every push, and attaches them to a
+GitHub Release when you push a `v*` tag.
+
 ## Tests
 
 ```sh
