@@ -1,0 +1,14 @@
+# Build outputs
+/tetris
+/tetris.exe
+/tetris-server
+/tetris-server.exe
+*.o
+*.obj
+dist/
+*.tar.gz
+*.zip
+
+# OS / editor cruft
+.DS_Store
+*.swp

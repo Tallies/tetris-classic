@@ -1,0 +1,103 @@
+# Cross-platform build matrix for Tetris Classic.
+#
+# Each OS is built natively on its own runner (Odin cannot reliably cross-link
+# desktop/raylib binaries from one OS to another). Artifacts are uploaded per
+# platform, and tagged pushes (v*) additionally create a GitHub Release.
+#
+# NOTE: this workflow was authored without a runner to validate it against.
+# The Odin setup step (action version/inputs) and the Linux GL/X11 dev packages
+# are the most likely spots to need a one-line tweak on the first CI run.
+
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-amd64
+            client: tetris
+            server: tetris-server
+          - os: windows-latest
+            name: windows-amd64
+            client: tetris.exe
+            server: tetris-server.exe
+          - os: macos-14   # Apple Silicon
+            name: macos-arm64
+            client: tetris
+            server: tetris-server
+          - os: macos-13   # Intel
+            name: macos-amd64
+            client: tetris
+            server: tetris-server
+    steps:
+      - uses: actions/checkout@v4
+
+      # raylib links the system GL/X11 libraries on Linux.
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxext-dev
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          release: latest
+
+      # Fast feedback: the pure-logic and networking tests need no display.
+      - name: Test
+        if: runner.os == 'Linux'
+        run: |
+          odin test game
+          odin test net
+          odin test server
+
+      - name: Build client
+        run: odin build . -out:${{ matrix.client }} -o:speed
+
+      - name: Build server
+        run: odin build server -out:${{ matrix.server }} -o:speed
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.client }}" "${{ matrix.server }}" README.md dist/
+          tar -C dist -czf "tetris-classic-${{ matrix.name }}.tar.gz" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tetris-classic-${{ matrix.name }}
+          path: tetris-classic-${{ matrix.name }}.tar.gz
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.gz
