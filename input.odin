@@ -68,17 +68,21 @@ combine_intents :: proc(a, b: game.PlayerIntent) -> game.PlayerIntent {
 }
 
 // Single-player control scheme (Campaign and the local side of head-to-head).
+// "All" enables arrows, IJKL and WASD together so left- and right-handed players
+// are both covered without changing a setting.
 SoloControls :: enum {
+	All,    // arrows + IJKL + WASD
 	Arrows, // arrows + Z
 	JIKL,   // J/I/K/L + U
-	Both,   // both at once
+	WASD,   // A/W/S/D + Left Shift
 }
 
 gather_solo :: proc(scheme: SoloControls, down_mode: DownMode) -> game.PlayerIntent {
 	switch scheme {
+	case .All:    return combine_intents(gather_right(down_mode), gather_awsd(down_mode))
 	case .Arrows: return gather_arrows(down_mode)
 	case .JIKL:   return gather_jikl(down_mode)
-	case .Both:   return gather_right(down_mode)
+	case .WASD:   return gather_awsd(down_mode)
 	}
 	return game.PlayerIntent{}
 }

@@ -320,6 +320,23 @@ test_no_lock_on_partner_piece :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_dualpit_same_piece_sequence :: proc(t: ^testing.T) {
+	// Dual Pit / head-to-head: both players must get the identical piece order,
+	// independent of pace.
+	s: Session
+	session_init(&s, .DualPit, .TetrisClassic, .Unlimited, 777)
+	testing.expect_value(t, s.players[0].current.kind, s.players[1].current.kind)
+	testing.expect_value(t, s.players[0].next, s.players[1].next)
+
+	// Drawing each bag forward in lockstep yields the same sequence.
+	for _ in 0 ..< 40 {
+		a := draw_piece(&s.players[0])
+		b := draw_piece(&s.players[1])
+		testing.expect_value(t, a, b)
+	}
+}
+
+@(test)
 test_session_dualpit_garbage :: proc(t: ^testing.T) {
 	s: Session
 	session_init(&s, .DualPit, .TetrisClassic, .Unlimited, 555)

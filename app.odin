@@ -107,7 +107,7 @@ run :: proc() {
 	app := App{}
 	app.scoring = .TetrisClassic
 	app.time_limit = .Unlimited
-	app.solo_controls = .Both // arrows and JIKL both work out of the box
+	app.solo_controls = .All // arrows, IJKL and WASD all work out of the box
 	app.high_score = load_highscore()
 
 	for !rl.WindowShouldClose() {
@@ -195,7 +195,7 @@ update_setup :: proc(app: ^App) {
 		case .Next:      app.next_disabled = !app.next_disabled
 		case .Down:      app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
 		case .Ghost:     app.ghost_disabled = !app.ghost_disabled
-		case .Controls:  app.solo_controls = SoloControls((int(app.solo_controls) + 1) % 3)
+		case .Controls:  app.solo_controls = SoloControls((int(app.solo_controls) + 1) % 4)
 		}
 	}
 
@@ -1055,9 +1055,10 @@ down_mode_name :: proc(m: DownMode) -> string {
 
 solo_controls_name :: proc(c: SoloControls) -> string {
 	switch c {
+	case .All:    return "All (Arrows/IJKL/WASD)"
 	case .Arrows: return "Arrow keys"
-	case .JIKL:   return "J I K L"
-	case .Both:   return "Arrows + JIKL"
+	case .JIKL:   return "I J K L"
+	case .WASD:   return "W A S D"
 	}
 	return "?"
 }

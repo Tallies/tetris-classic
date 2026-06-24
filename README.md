@@ -46,9 +46,11 @@ Requires the Odin toolchain (tested with the 2026-06 nightly). raylib and
 
 ## Controls
 
-**Single player / online:** choose a scheme in setup — **Arrows** (↑ rotate CW,
-`Z` rotate CCW, ↓ drop), **JIKL** (`I` rotate CW, `U` rotate CCW, `J`/`L` move,
-`K` drop), or **both at once** (default).
+**Single player / online:** by default **all three** schemes are active at once
+(left- and right-handed friendly) — **Arrows** (↑ CW, `Z` CCW, ↓ drop),
+**IJKL** (`I` CW, `U` CCW, `J`/`L` move, `K` drop), and **WASD** (`W` CW,
+`Left Shift` CCW, `A`/`D` move, `S` drop). The Controls option in setup can
+restrict it to a single scheme.
 
 **Two-player local** — fixed schemes, one per side of the pit:
 - **Left player:** `A`/`D` move, `W` rotate CW, `Left Shift` rotate CCW, `S` drop.

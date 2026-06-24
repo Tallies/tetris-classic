@@ -137,8 +137,13 @@ session_init :: proc(s: ^Session, mode: GameMode, scoring: ScoringSystem, time_l
 		s.num_players = 2
 		board_init(&s.boards[0], PIT_WIDTH, PIT_HEIGHT, seed)
 		board_init(&s.boards[1], PIT_WIDTH, PIT_HEIGHT, seed ~ 0xCAFE)
+		// Both players draw from the SAME piece seed so they get the identical
+		// tetromino sequence regardless of pace. Each bag RNG is independent and
+		// only advances on its own draws, so the Nth piece matches for both.
+		// (In head-to-head each machine simulates its own player 0 with the same
+		// shared seed, so the sequences match across the network too.)
 		player_init(&s.boards[0], &s.players[0], seed ~ 0xA1, -1)
-		player_init(&s.boards[1], &s.players[1], seed ~ 0xB2, -1)
+		player_init(&s.boards[1], &s.players[1], seed ~ 0xA1, -1)
 	}
 }
 
