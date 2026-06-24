@@ -44,6 +44,26 @@ odin build server -out:tetris-server -o:speed
 Requires the Odin toolchain (tested with the 2026-06 nightly). raylib and
 `core:net` ship with Odin — no system libraries needed.
 
+## Running a downloaded release
+
+Release builds are attached to each tagged release: a `.zip` for Windows and a
+`.tar.gz` for Linux/macOS (each also contains this README). Extract it, then:
+
+**Windows** — the build is **not code-signed**, so Microsoft Defender SmartScreen
+shows *"Windows protected your PC … unknown publisher."* This is expected for an
+unsigned app, not a virus warning. To run it:
+
+- Click **More info → Run anyway** on the SmartScreen dialog, or
+- Right-click `tetris.exe` → **Properties** → tick **Unblock** → OK (then run),
+  or in PowerShell: `Unblock-File .\tetris.exe`.
+
+(Removing the warning entirely requires code-signing the executable with a
+trusted certificate — a paid step that isn't set up for these builds.)
+
+**Linux / macOS** — extract and run `./tetris` (the executable bit is preserved
+in the tarball). On macOS, Gatekeeper may need **Right-click → Open** the first
+time for the same unsigned-app reason.
+
 ## Controls
 
 **Single player / online:** by default **all three** schemes are active at once

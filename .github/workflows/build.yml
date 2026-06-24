@@ -74,7 +74,18 @@ jobs:
       - name: Build server
         run: odin build server -out:${{ matrix.server }} -o:speed
 
-      - name: Package
+      # Windows -> .zip (native on Windows). README is bundled in every archive.
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "${{ matrix.client }}","${{ matrix.server }}","README.md" dist/
+          Compress-Archive -Path dist/* -DestinationPath "tetris-classic-${{ matrix.name }}.zip"
+
+      # Linux/macOS -> .tar.gz (preserves the executable bit).
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p dist
@@ -85,7 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tetris-classic-${{ matrix.name }}
-          path: tetris-classic-${{ matrix.name }}.tar.gz
+          path: tetris-classic-${{ matrix.name }}.*
 
   release:
     name: Release
@@ -102,6 +113,8 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.tar.gz
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
           prerelease: true
           generate_release_notes: true
