@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:strconv"
 import "core:strings"
 import rl "vendor:raylib"
 
@@ -453,15 +454,28 @@ submit_join :: proc(app: ^App, password: string) {
 
 // Dial the matchmaking server, storing the connection on the app.
 connect_server :: proc(app: ^App) -> bool {
-	addr := string(app.server_addr_buf[:app.server_addr_len])
-	n, ok := netplay.connect_server(addr, netplay.DEFAULT_PORT)
+	host, port := parse_host_port(string(app.server_addr_buf[:app.server_addr_len]))
+	n, ok := netplay.connect_server(host, port)
 	if !ok {
-		app.lobby_status = fmt.aprintf("Could not reach server %s", addr)
+		app.lobby_status = fmt.aprintf("Could not reach server %s:%d", host, port)
 		app.screen = .Lobby
 		return false
 	}
 	app.net = n
 	return true
+}
+
+// Split "host" or "host:port" into a host and port (default 7777). Lets players
+// reach a server on a non-default port, e.g. a cloud host's mapped port.
+parse_host_port :: proc(s: string) -> (host: string, port: int) {
+	host, port = s, netplay.DEFAULT_PORT
+	if i := strings.last_index_byte(s, ':'); i >= 0 {
+		host = s[:i]
+		if p, ok := strconv.parse_int(s[i + 1:]); ok {
+			port = p
+		}
+	}
+	return
 }
 
 // -------------------------------------------------------------------- lobby ---
@@ -838,7 +852,7 @@ draw_screen :: proc(app: ^App, sw, sh: i32) {
 		draw_net_join(app, sw, sh)
 
 	case .ServerSetup:
-		draw_text_entry(app, sw, sh, "MATCHMAKING SERVER", "Enter server address (IP or hostname):",
+		draw_text_entry(app, sw, sh, "MATCHMAKING SERVER", "Enter server address (host or host:port):",
 			string(app.server_addr_buf[:app.server_addr_len]), "Enter to continue   Esc back")
 
 	case .ServerMenu:
