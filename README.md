@@ -174,7 +174,8 @@ docker run --rm -p 7777:7777 tetris-server               # or set the port:
 docker run --rm -e PORT=9000 -p 9000:9000 tetris-server
 ```
 
-Listen port precedence is `$PORT` > the CMD arg > 7777. The first build is slow
+Set the `PORT` env var to change the listen port (the image defaults it to
+7777); a CLI arg also works when `PORT` is unset. The first build is slow
 because it compiles the Odin toolchain from source (pinned via the `ODIN_REF`
 build arg) so the binary matches the runtime image's glibc. For ARM hosts, build
 with `docker buildx --platform linux/arm64`.

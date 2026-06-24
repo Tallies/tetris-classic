@@ -23,22 +23,26 @@ ARG ODIN_REF=dev-2026-06
 # ---- build stage ----
 FROM ubuntu:24.04 AS build
 ARG ODIN_REF
-ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# DEBIAN_FRONTEND is set inline (not as an ARG) so it isn't surfaced as a
+# settable variable by deploy platforms; odin is invoked by full path so we
+# don't need to put /opt/odin on PATH (which would also get surfaced).
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         git make clang llvm ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch "${ODIN_REF}" https://github.com/odin-lang/Odin /opt/odin \
     && cd /opt/odin && ./build_odin.sh release
-ENV PATH="/opt/odin:${PATH}"
 
 WORKDIR /src
 COPY . .
-RUN odin build server -out:tetris-server -o:speed
+RUN /opt/odin/odin build server -out:tetris-server -o:speed
 
 # ---- runtime stage ----
 FROM ubuntu:24.04
 COPY --from=build /src/tetris-server /usr/local/bin/tetris-server
+# The only variable worth setting: the listen port. Hosts that inject their own
+# PORT override this automatically.
+ENV PORT=7777
 EXPOSE 7777
 ENTRYPOINT ["tetris-server"]
-CMD ["7777"]
