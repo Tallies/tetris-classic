@@ -175,10 +175,10 @@ docker run --rm -e PORT=9000 -p 9000:9000 tetris-server
 ```
 
 Set the `PORT` env var to change the listen port (the image defaults it to
-7777); a CLI arg also works when `PORT` is unset. The first build is slow
-because it compiles the Odin toolchain from source (pinned via the `ODIN_REF`
-build arg) so the binary matches the runtime image's glibc. For ARM hosts, build
-with `docker buildx --platform linux/arm64`.
+7777); a CLI arg also works when `PORT` is unset. The build downloads a prebuilt
+Odin compiler matching the build architecture (amd64/arm64), pinned via the
+`ODIN_REF` build arg — so it builds on x86 and ARM hosts (e.g. AWS Graviton)
+alike. For local cross-arch builds use `docker buildx --platform linux/arm64`.
 
 ### Deploying to a container host (SnapDeploy etc.)
 

@@ -5,34 +5,35 @@
 # server/), which the root build context provides.
 #
 # The server uses only core:net + libc (no GUI), so the runtime image is tiny.
-# Self-contained build: stage 1 builds the Odin compiler from a pinned tag and
-# then the server, on the same base as the runtime stage so glibc matches. The
-# first build is slow (it compiles Odin); bump ODIN_REF to a real Odin release
-# tag if needed.
+# The build downloads a prebuilt Odin compiler (matching the build arch) rather
+# than compiling it from source — fast, and no LLVM toolchain to install. Only
+# `clang` is needed, which Odin uses to link the final binary.
 #
 # Local use:
 #   docker build -t tetris-server .
 #   docker run --rm -p 7777:7777 tetris-server          # or set the port:
 #   docker run --rm -e PORT=9000 -p 9000:9000 tetris-server
 #
-# Listen port precedence: $PORT > the CMD arg below > 7777. Hosts that inject a
-# PORT env var (SnapDeploy, etc.) are honored automatically.
+# ODIN_REF must be a published Odin release tag with linux-amd64/arm64 assets.
 
 ARG ODIN_REF=dev-2026-06
 
 # ---- build stage ----
 FROM ubuntu:24.04 AS build
 ARG ODIN_REF
-# DEBIAN_FRONTEND is set inline (not as an ARG) so it isn't surfaced as a
-# settable variable by deploy platforms; odin is invoked by full path so we
-# don't need to put /opt/odin on PATH (which would also get surfaced).
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        git make clang llvm ca-certificates \
+        clang curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch "${ODIN_REF}" https://github.com/odin-lang/Odin /opt/odin \
-    && cd /opt/odin && ./build_odin.sh release
+# Download the prebuilt Odin for this architecture (amd64 or arm64).
+RUN arch="$(dpkg --print-architecture)" \
+    && url="https://github.com/odin-lang/Odin/releases/download/${ODIN_REF}/odin-linux-${arch}-${ODIN_REF}.tar.gz" \
+    && echo "Fetching $url" \
+    && curl -fsSL "$url" -o /tmp/odin.tar.gz \
+    && mkdir -p /opt/odin \
+    && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1 \
+    && rm /tmp/odin.tar.gz
 
 WORKDIR /src
 COPY . .
