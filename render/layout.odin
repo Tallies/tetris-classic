@@ -147,8 +147,11 @@ draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, s
 	rl.DrawText(fmt.ctprintf("%d", p.score), x + pad, cy, 26, COLOR_TEXT); cy += line_h + 6
 
 	if high_score >= 0 {
+		// Once the current score reaches the stored best, the high score tracks
+		// upward with it.
+		shown_high := max(high_score, p.score)
 		rl.DrawText(fmt.ctprintf("HIGH SCORE"), x + pad, cy, 18, COLOR_TEXT_DIM); cy += 22
-		rl.DrawText(fmt.ctprintf("%d", high_score), x + pad, cy, 24, COLOR_HIGHLIGHT); cy += line_h + 6
+		rl.DrawText(fmt.ctprintf("%d", shown_high), x + pad, cy, 24, COLOR_HIGHLIGHT); cy += line_h + 6
 	}
 
 	rl.DrawText(fmt.ctprintf("LEVEL"), x + pad, cy, 18, COLOR_TEXT_DIM)
@@ -174,16 +177,12 @@ draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, s
 	return panel_h
 }
 
-// Letters for the piece-usage panel.
-PIECE_LETTERS := [game.PieceKind]string {
-	.None = "", .I = "I", .O = "O", .T = "T", .S = "S", .Z = "Z", .J = "J", .L = "L",
-}
-
-// A panel listing how many of each piece kind the player has spawned.
+// A panel listing how many of each piece kind the player has spawned, each row
+// showing the actual tetromino shape and its count.
 draw_piece_counts :: proc(s: ^game.Session, idx: int, x, y, w: i32) {
 	p := &s.players[idx]
 	pad := i32(14)
-	row_h := i32(30)
+	row_h := i32(34)
 	order := [7]game.PieceKind{.I, .O, .T, .S, .Z, .J, .L}
 	h := pad * 2 + 28 + i32(len(order)) * row_h
 
@@ -191,15 +190,33 @@ draw_piece_counts :: proc(s: ^game.Session, idx: int, x, y, w: i32) {
 	rl.DrawRectangleLinesEx({f32(x), f32(y), f32(w), f32(h)}, 2, {255, 255, 255, 40})
 	rl.DrawText(fmt.ctprintf("PIECES USED"), x + pad, y + pad, 18, COLOR_TEXT_DIM)
 
+	cell := f32(11)
 	cy := y + pad + 28
 	for k in order {
-		bs := f32(20)
-		draw_block(f32(x + pad), f32(cy) + 3, bs, game.PIECE_COLOR[k])
-		rl.DrawText(fmt.ctprintf("%s", PIECE_LETTERS[k]), x + pad + i32(bs) + 12, cy + 4, 22, COLOR_TEXT)
+		// Vertically centre the shape in the row.
+		miny, maxy := 99, -1
+		for off in game.SHAPES[k][game.Rotation.R0] {
+			miny = min(miny, off.y); maxy = max(maxy, off.y)
+		}
+		icon_h := f32(maxy - miny + 1) * cell
+		iy := f32(cy) + (f32(row_h) - icon_h) / 2
+		draw_piece_icon(k, f32(x + pad), iy, cell)
 
 		ct := fmt.ctprintf("%d", p.counts[k])
-		rl.DrawText(ct, x + w - pad - rl.MeasureText(ct, 22), cy + 4, 22, COLOR_TEXT)
+		rl.DrawText(ct, x + w - pad - rl.MeasureText(ct, 22), cy + (row_h - 22) / 2, 22, COLOR_TEXT)
 		cy += row_h
+	}
+}
+
+// Draw a tetromino's spawn (R0) shape with its bounding box top-left at (ox,oy).
+draw_piece_icon :: proc(kind: game.PieceKind, ox, oy, cell: f32) {
+	minx, miny := 99, 99
+	for off in game.SHAPES[kind][game.Rotation.R0] {
+		minx = min(minx, off.x); miny = min(miny, off.y)
+	}
+	ci := game.PIECE_COLOR[kind]
+	for off in game.SHAPES[kind][game.Rotation.R0] {
+		draw_block(ox + f32(off.x - minx) * cell, oy + f32(off.y - miny) * cell, cell, ci)
 	}
 }
 
