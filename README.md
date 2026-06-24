@@ -166,17 +166,34 @@ always-on use, run it under a process manager (systemd / a container).
 
 ### Docker
 
-A self-contained image is provided (`server/Dockerfile`) — build it from the repo
-root:
+A self-contained image is provided (`Dockerfile` at the repo root):
 
 ```sh
-docker build -f server/Dockerfile -t tetris-server .
-docker run --rm -p 7777:7777 tetris-server          # or: ... tetris-server 9000
+docker build -t tetris-server .
+docker run --rm -p 7777:7777 tetris-server               # or set the port:
+docker run --rm -e PORT=9000 -p 9000:9000 tetris-server
 ```
 
-The first build is slow because it compiles the Odin toolchain from source
-(pinned via the `ODIN_REF` build arg) so the binary matches the runtime image's
-glibc. For ARM hosts, build with `docker buildx --platform linux/arm64`.
+Listen port precedence is `$PORT` > the CMD arg > 7777. The first build is slow
+because it compiles the Odin toolchain from source (pinned via the `ODIN_REF`
+build arg) so the binary matches the runtime image's glibc. For ARM hosts, build
+with `docker buildx --platform linux/arm64`.
+
+### Deploying to a container host (SnapDeploy etc.)
+
+The root `Dockerfile` is what a Docker-native PaaS like
+[SnapDeploy](https://snapdeploy.dev/) builds: connect the GitHub repo, it detects
+the Dockerfile, builds, and runs the server. The server reads `$PORT` if the host
+injects one, and `EXPOSE 7777` advertises the default.
+
+> **Important — the server speaks raw TCP, not HTTP.** Hosts that only route
+> HTTP/HTTPS (with HTTP health checks and SSL termination) cannot carry the game
+> protocol, and an HTTP health check against the raw-TCP port will fail. Before
+> relying on SnapDeploy, confirm it supports a **raw TCP service / TCP health
+> check** (and exposes a reachable TCP port to clients). If it is HTTP-only, the
+> server would need its transport changed to **WebSocket** (rides on HTTP/S) —
+> a larger change to both client and server that isn't done here. A VM or a
+> TCP-capable host (Fly.io, a plain Docker host, etc.) runs it as-is.
 
 ### Continuous builds
 
