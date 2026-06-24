@@ -234,6 +234,48 @@ test_shared_spawn_waits_for_partner :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_no_lock_on_partner_piece :: proc(t: ^testing.T) {
+	// A piece resting on the other player's falling piece (not the stack) must
+	// not lock — otherwise it freezes mid-air and leaves a floating block.
+	b: Board
+	board_init(&b, SHARED_WIDTH, PIT_HEIGHT, 1)
+	p0, p1: Player
+	p0.has_piece = true
+	p0.current = Piece{kind = .O, rotation = .R0, x = 5, y = 5}
+	p1.has_piece = true
+	p1.current = Piece{kind = .O, rotation = .R0, x = 5, y = 7} // directly below p0
+
+	others := []^Player{&p1}
+	for _ in 0 ..< 80 { // ~4s, well past the lock delay
+		player_update(&b, &p0, 0.05, 0.8, false, others)
+	}
+	testing.expect(t, p0.has_piece, "p0 must not lock onto a falling piece")
+
+	// Nothing should have settled into the board.
+	settled := 0
+	for y in 0 ..< board_rows(&b) {
+		for x in 0 ..< b.width {
+			if b.cells[y][x] != CELL_EMPTY do settled += 1
+		}
+	}
+	testing.expect_value(t, settled, 0)
+
+	// With the partner gone, p0 resumes falling and eventually locks on the floor
+	// (soft drop so it reaches the bottom quickly within the test window).
+	p1.has_piece = false
+	for _ in 0 ..< 200 {
+		player_update(&b, &p0, 0.05, 0.8, true, others)
+	}
+	settled_after := 0
+	for y in 0 ..< board_rows(&b) {
+		for x in 0 ..< b.width {
+			if b.cells[y][x] != CELL_EMPTY do settled_after += 1
+		}
+	}
+	testing.expect(t, settled_after > 0, "p0 falls and locks once the partner is gone")
+}
+
+@(test)
 test_session_dualpit_garbage :: proc(t: ^testing.T) {
 	s: Session
 	session_init(&s, .DualPit, .TetrisClassic, .Unlimited, 555)

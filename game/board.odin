@@ -140,19 +140,28 @@ try_rotate :: proc(b: ^Board, p: ^Player, cw: bool, others: []^Player) -> bool {
 	return false
 }
 
-// Hard drop: fall until resting, then lock immediately. Returns cells dropped.
+// Hard drop: fall as far as possible, then lock — but only if it came to rest on
+// the settled stack/floor. If it merely landed on the other player's falling
+// piece it stays unlocked and resumes falling once that piece moves (avoiding a
+// floating block).
 hard_drop :: proc(b: ^Board, p: ^Player, others: []^Player) -> (dropped: int, cleared: int) {
 	if !p.has_piece do return 0, 0
 	for try_move(b, p, 0, 1, others) {
 		dropped += 1
 	}
-	cleared = lock_piece(b, p, others)
+	if piece_grounded(b, p) {
+		cleared = lock_piece(b, p, others)
+	}
 	return
 }
 
-piece_grounded :: proc(b: ^Board, p: ^Player, others: []^Player) -> bool {
+// True only if the piece rests on the settled stack or the floor. It is NOT
+// grounded merely by sitting on another player's falling piece — a piece locks
+// onto settled cells only, otherwise it would freeze in mid-air (and leave a
+// floating block once the supporting piece moves away).
+piece_grounded :: proc(b: ^Board, p: ^Player) -> bool {
 	c := p.current
-	return piece_collides(b, c.kind, c.rotation, c.x, c.y + 1, others)
+	return piece_collides(b, c.kind, c.rotation, c.x, c.y + 1, nil)
 }
 
 // Stamp the player's piece into the board. If it completes rows, begin the
@@ -298,13 +307,15 @@ player_update :: proc(b: ^Board, p: ^Player, dt: f32, gravity_period: f32, soft_
 		}
 	}
 
-	if piece_grounded(b, p, others) {
+	if piece_grounded(b, p) {
 		p.locking = true
 		p.lock_timer += dt
 		if p.lock_timer >= LOCK_DELAY {
 			cleared += lock_piece(b, p, others)
 		}
 	} else {
+		// Either falling freely or merely resting on the other player's piece;
+		// in the latter case gravity resumes once that piece moves on.
 		p.locking = false
 		p.lock_timer = 0
 	}
