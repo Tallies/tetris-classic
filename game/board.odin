@@ -97,6 +97,7 @@ try_spawn :: proc(b: ^Board, p: ^Player, others: []^Player) -> bool {
 	}
 
 	p.next = draw_piece(p)
+	p.counts[kind] += 1
 	p.current = Piece{kind = kind, rotation = .R0, x = px, y = py}
 	p.has_piece = true
 	p.locking = false

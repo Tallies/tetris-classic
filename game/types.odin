@@ -115,6 +115,9 @@ Player :: struct {
 	lines:     int,
 	level:     int,
 	topped_out: bool, // this player can no longer place pieces
+
+	// How many of each piece kind this player has spawned (for the HUD).
+	counts: [PieceKind]int,
 }
 
 board_rows :: proc(b: ^Board) -> int {

@@ -58,6 +58,14 @@ Requires the Odin toolchain (tested with the 2026-06 nightly). raylib and
 `P` pause · `Esc` leave to menu · `Enter` confirm / return after game over.
 `M` toggle music · `N` toggle sound effects.
 
+## Single-player extras
+
+Campaign shows a **high score** that persists between runs (saved locally to
+`~/.tetris-classic-highscore`, or `%APPDATA%\tetris-classic-highscore` on
+Windows) and flags a **NEW HIGH SCORE!** on the results screen when you beat it.
+The HUD also shows a **Pieces Used** panel under the Next box with a running
+count of each tetromino kind.
+
 ## Audio
 
 Music and sound are **synthesized procedurally at runtime** (a small chiptune
@@ -176,7 +184,7 @@ server/    dedicated matchmaking + relay server (separate binary, package `main`
 ## Roadmap
 
 - Decorative per-level background art (original-style) behind the pits.
-- Hold piece, configurable controls, high-score table.
+- Hold piece; full high-score *table* (per mode) beyond the single-player best.
 - Richer arrangement / per-level music variations.
 - WASM build target (raylib supports it) for browser play.
 ```

@@ -78,6 +78,10 @@ App :: struct {
 	prev_level:      int,
 	prev_game_over:  bool,
 
+	// single-player high score (persisted)
+	high_score:     int,
+	new_high_score: bool,
+
 	session: game.Session,
 }
 
@@ -102,6 +106,7 @@ run :: proc() {
 	app.scoring = .TetrisClassic
 	app.time_limit = .Unlimited
 	app.solo_controls = .Both // arrows and JIKL both work out of the box
+	app.high_score = load_highscore()
 
 	for !rl.WindowShouldClose() {
 		dt := rl.GetFrameTime()
@@ -225,6 +230,7 @@ start_local_game :: proc(app: ^App) {
 	game.session_init(&app.session, app.mode, app.scoring, app.time_limit, app.seed)
 	app.session.next_disabled = app.next_disabled
 	app.session.ghost_disabled = app.ghost_disabled
+	app.new_high_score = false
 	reset_audio_tracking(app)
 	app.screen = .Playing
 }
@@ -618,9 +624,21 @@ audio_post :: proc(app: ^App) {
 	if s.state == .GameOver && !app.prev_game_over {
 		audio.play(.GameOver)
 		app.prev_game_over = true
+		finalize_campaign_score(app)
 	}
 	app.prev_lines = lines
 	app.prev_level = level
+}
+
+// On a Campaign game over, record a new high score to disk if it was beaten.
+finalize_campaign_score :: proc(app: ^App) {
+	if app.mode != .Campaign do return
+	score := app.session.players[0].score
+	if score > app.high_score {
+		app.high_score = score
+		app.new_high_score = true
+		save_highscore(score)
+	}
 }
 
 // Lines cleared and top level for the locally-controlled player(s). In
@@ -824,7 +842,7 @@ draw_screen :: proc(app: ^App, sw, sh: i32) {
 	case .Playing:
 		p1 := app.mode == .HeadToHead ? "YOU" : "PLAYER 1"
 		p2 := app.mode == .HeadToHead ? "OPPONENT" : "PLAYER 2"
-		render.draw_session(&app.session, sw, sh, p1, p2)
+		render.draw_session(&app.session, sw, sh, p1, p2, app.high_score, app.new_high_score)
 	}
 }
 

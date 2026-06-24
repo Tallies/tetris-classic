@@ -7,7 +7,7 @@ import "../game"
 // Top-level session rendering: chooses a layout for the mode, draws the pit(s),
 // pieces, and HUD panels, plus pause / game-over overlays.
 
-draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string) {
+draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string, high_score: int, new_high: bool) {
 	// Background colour reflects the current level (placeholder for per-level
 	// artwork). Same level -> same colour.
 	top := bg_for_level(representative_level(s))
@@ -15,7 +15,7 @@ draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string) {
 
 	switch s.mode {
 	case .Campaign:
-		draw_single_layout(s, 0, sw, sh, p1_name)
+		draw_single_layout(s, 0, sw, sh, p1_name, high_score)
 	case .Cooperative, .Competitive:
 		draw_shared_layout(s, sw, sh, p1_name, p2_name)
 	case .DualPit, .HeadToHead:
@@ -25,7 +25,7 @@ draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string) {
 	if s.paused {
 		draw_overlay(sw, sh, "PAUSED", "Press P to resume")
 	} else if s.state == .GameOver {
-		draw_result(s, sw, sh, p1_name, p2_name)
+		draw_result(s, sw, sh, p1_name, p2_name, high_score, new_high)
 	}
 }
 
@@ -49,7 +49,7 @@ fit_cell :: proc(area_w, area_h: f32, cols, rows: int) -> f32 {
 }
 
 // --- Single pit (campaign): pit on the left, HUD panel on the right. ---
-draw_single_layout :: proc(s: ^game.Session, idx: int, sw, sh: i32, name: string) {
+draw_single_layout :: proc(s: ^game.Session, idx: int, sw, sh: i32, name: string, high_score: int) {
 	margin := f32(40)
 	hud_w := f32(260)
 	avail_w := f32(sw) - hud_w - margin * 3
@@ -67,7 +67,8 @@ draw_single_layout :: proc(s: ^game.Session, idx: int, sw, sh: i32, name: string
 	draw_player_piece(s, idx, ox, oy, cell)
 
 	hud_x := ox + pit_w + margin
-	draw_hud_panel(s, idx, i32(hud_x), i32(oy), i32(hud_w), name, true)
+	panel_h := draw_hud_panel(s, idx, i32(hud_x), i32(oy), i32(hud_w), name, true, high_score)
+	draw_piece_counts(s, idx, i32(hud_x), i32(oy) + panel_h + 16, i32(hud_w))
 }
 
 // --- Shared wide pit (coop / competitive). ---
@@ -126,16 +127,16 @@ draw_dual_layout :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string) {
 	draw_one_pit_with_hud(s, 1, margin * 2 + half_w, half_w, avail_h, f32(sh), hud_w, n2)
 }
 
-// A HUD panel for one player: name, score, lines, level, next preview, timer.
-draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, show_next: bool) {
+// A HUD panel for one player: name, score, [high score], lines, level, next,
+// timer. Returns the panel height. `high_score < 0` hides the high-score row.
+draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, show_next: bool, high_score := -1) -> i32 {
 	p := &s.players[idx]
 	pad := i32(14)
 	line_h := i32(30)
 	cy := y + pad
 
 	// Panel background.
-	rl.DrawRectangleRec({f32(x), f32(y), f32(w), 0}, COLOR_PANEL) // no-op guard
-	panel_h := i32(330)
+	panel_h := high_score >= 0 ? i32(384) : i32(330)
 	rl.DrawRectangleRec({f32(x), f32(y), f32(w), f32(panel_h)}, COLOR_PANEL)
 	rl.DrawRectangleLinesEx({f32(x), f32(y), f32(w), f32(panel_h)}, 2, {255, 255, 255, 40})
 
@@ -144,6 +145,11 @@ draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, s
 
 	rl.DrawText(fmt.ctprintf("SCORE"), x + pad, cy, 18, COLOR_TEXT_DIM); cy += 22
 	rl.DrawText(fmt.ctprintf("%d", p.score), x + pad, cy, 26, COLOR_TEXT); cy += line_h + 6
+
+	if high_score >= 0 {
+		rl.DrawText(fmt.ctprintf("HIGH SCORE"), x + pad, cy, 18, COLOR_TEXT_DIM); cy += 22
+		rl.DrawText(fmt.ctprintf("%d", high_score), x + pad, cy, 24, COLOR_HIGHLIGHT); cy += line_h + 6
+	}
 
 	rl.DrawText(fmt.ctprintf("LEVEL"), x + pad, cy, 18, COLOR_TEXT_DIM)
 	rl.DrawText(fmt.ctprintf("LINES"), x + w/2, cy, 18, COLOR_TEXT_DIM); cy += 22
@@ -165,6 +171,36 @@ draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, s
 		secs := int(s.time_remaining) % 60
 		rl.DrawText(fmt.ctprintf("TIME %02d:%02d", mins, secs), x + pad, y + panel_h - 30, 22, COLOR_TEXT)
 	}
+	return panel_h
+}
+
+// Letters for the piece-usage panel.
+PIECE_LETTERS := [game.PieceKind]string {
+	.None = "", .I = "I", .O = "O", .T = "T", .S = "S", .Z = "Z", .J = "J", .L = "L",
+}
+
+// A panel listing how many of each piece kind the player has spawned.
+draw_piece_counts :: proc(s: ^game.Session, idx: int, x, y, w: i32) {
+	p := &s.players[idx]
+	pad := i32(14)
+	row_h := i32(30)
+	order := [7]game.PieceKind{.I, .O, .T, .S, .Z, .J, .L}
+	h := pad * 2 + 28 + i32(len(order)) * row_h
+
+	rl.DrawRectangleRec({f32(x), f32(y), f32(w), f32(h)}, COLOR_PANEL)
+	rl.DrawRectangleLinesEx({f32(x), f32(y), f32(w), f32(h)}, 2, {255, 255, 255, 40})
+	rl.DrawText(fmt.ctprintf("PIECES USED"), x + pad, y + pad, 18, COLOR_TEXT_DIM)
+
+	cy := y + pad + 28
+	for k in order {
+		bs := f32(20)
+		draw_block(f32(x + pad), f32(cy) + 3, bs, game.PIECE_COLOR[k])
+		rl.DrawText(fmt.ctprintf("%s", PIECE_LETTERS[k]), x + pad + i32(bs) + 12, cy + 4, 22, COLOR_TEXT)
+
+		ct := fmt.ctprintf("%d", p.counts[k])
+		rl.DrawText(ct, x + w - pad - rl.MeasureText(ct, 22), cy + 4, 22, COLOR_TEXT)
+		cy += row_h
+	}
 }
 
 draw_overlay :: proc(sw, sh: i32, title, subtitle: string) {
@@ -173,8 +209,17 @@ draw_overlay :: proc(sw, sh: i32, title, subtitle: string) {
 	text_center(subtitle, sw / 2, sh / 2 + 30, 24, COLOR_TEXT)
 }
 
-draw_result :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string) {
+draw_result :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string, high_score: int, new_high: bool) {
 	rl.DrawRectangleRec({0, 0, f32(sw), f32(sh)}, {0, 0, 0, 160})
+
+	// Campaign: show the (possibly new) high score under the result.
+	if s.mode == .Campaign {
+		if new_high {
+			text_center("NEW HIGH SCORE!", sw / 2, sh / 2 + 110, 28, COLOR_HIGHLIGHT)
+		} else {
+			text_center(fmt.tprintf("High Score  %d", high_score), sw / 2, sh / 2 + 110, 24, COLOR_TEXT_DIM)
+		}
+	}
 
 	title := "GAME OVER"
 	sub := ""
