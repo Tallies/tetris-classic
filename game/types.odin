@@ -98,6 +98,7 @@ Player :: struct {
 	current:   Piece,
 	next:      PieceKind,
 	has_piece: bool,
+	spawn_col: int, // left edge of the spawn position (per-player side in shared pits)
 
 	// Seven-bag randomizer (independent per player).
 	bag:       [7]PieceKind,

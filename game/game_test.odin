@@ -189,6 +189,21 @@ test_clear_flash_defers_removal :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_shared_pit_respawn_keeps_side :: proc(t: ^testing.T) {
+	// Regression: in a shared pit each player must respawn on its own side, not
+	// recentre — otherwise both players' pieces collide on respawn and top out.
+	b: Board
+	p: Player
+	board_init(&b, SHARED_WIDTH, PIT_HEIGHT, 5)
+	player_init(&b, &p, 9, 11) // right-side spawn column
+	testing.expect_value(t, p.spawn_col, 11)
+
+	hard_drop(&b, &p, nil) // lock (no line on an 18-wide row) then respawn
+	testing.expect(t, !b.game_over, "single piece should not end the game")
+	testing.expect_value(t, p.current.x, 11) // respawned on its side, not centre
+}
+
+@(test)
 test_session_dualpit_garbage :: proc(t: ^testing.T) {
 	s: Session
 	session_init(&s, .DualPit, .TetrisClassic, .Unlimited, 555)

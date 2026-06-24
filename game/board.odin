@@ -31,9 +31,12 @@ player_init :: proc(b: ^Board, p: ^Player, seed: u64, spawn_col: int) {
 	p.active = true
 	p.rng_state = seed == 0 ? 0x123456789ABCDEF : seed
 	p.level = 1
+	// Remember the spawn column so every respawn keeps this player on its side
+	// of a shared pit (otherwise both players would respawn centered and clash).
+	p.spawn_col = spawn_col >= 0 ? spawn_col : (b.width - 4) / 2
 	refill_bag(p)
 	p.next = draw_piece(p)
-	spawn_piece(b, p, nil, spawn_col)
+	spawn_piece(b, p, nil)
 }
 
 // True if any of the other players' falling pieces occupy (x, y).
@@ -66,13 +69,13 @@ piece_collides :: proc(b: ^Board, kind: PieceKind, rot: Rotation, px, py: int, o
 	return false
 }
 
-// Spawn the player's queued next piece. `spawn_col` is the desired left edge of
-// the 4-wide bounding box; -1 centers it. Tops out the player on block-out.
-spawn_piece :: proc(b: ^Board, p: ^Player, others: []^Player, spawn_col: int = -1) {
+// Spawn the player's queued next piece at its stored spawn column. Tops out the
+// player on block-out.
+spawn_piece :: proc(b: ^Board, p: ^Player, others: []^Player) {
 	kind := p.next
 	p.next = draw_piece(p)
 
-	px := spawn_col >= 0 ? spawn_col : (b.width - 4) / 2
+	px := p.spawn_col
 	py := 0
 
 	p.current = Piece{kind = kind, rotation = .R0, x = px, y = py}

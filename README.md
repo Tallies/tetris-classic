@@ -46,9 +46,14 @@ Requires the Odin toolchain (tested with the 2026-06 nightly). raylib and
 
 ## Controls
 
-**Player 1 / online:** Arrow keys move, ↑ rotate CW, `Z` rotate CCW, ↓ drop.
+**Single player / online:** choose a scheme in setup — **Arrows** (↑ rotate CW,
+`Z` rotate CCW, ↓ drop), **JIKL** (`I` rotate CW, `U` rotate CCW, `J`/`L` move,
+`K` drop), or **both at once** (default).
 
-**Player 2 (local 2P):** `A`/`D` move, `W` rotate CW, `Left Shift` rotate CCW, `S` drop.
+**Two-player local** — fixed schemes, one per side of the pit:
+- **Left player:** `A`/`D` move, `W` rotate CW, `Left Shift` rotate CCW, `S` drop.
+- **Right player:** Arrow keys **or** `J`/`I`/`K`/`L` (+`U` for CCW) — both work,
+  handy when a laptop's arrow keys are cramped.
 
 `P` pause · `Esc` leave to menu · `Enter` confirm / return after game over.
 `M` toggle music · `N` toggle sound effects.

@@ -48,6 +48,7 @@ App :: struct {
 	next_disabled:  bool,
 	ghost_disabled: bool,
 	down_mode:      DownMode,
+	solo_controls:  SoloControls,
 
 	// networking
 	net:            ^netplay.Net,
@@ -100,6 +101,7 @@ run :: proc() {
 	app := App{}
 	app.scoring = .TetrisClassic
 	app.time_limit = .Unlimited
+	app.solo_controls = .Both // arrows and JIKL both work out of the box
 
 	for !rl.WindowShouldClose() {
 		dt := rl.GetFrameTime()
@@ -159,28 +161,56 @@ update_main_menu :: proc(app: ^App) {
 
 // ------------------------------------------------------------------- setup ---
 
-SETUP_START :: 5 // index of the START row
+// Setup rows. The Controls scheme only applies to single player, so it appears
+// only in Campaign setup; two-player modes have fixed AWSD (left) / arrows+JIKL
+// (right) controls.
+SetupField :: enum {
+	Scoring, TimeLimit, Next, Down, Ghost, Controls, Start,
+}
+
+SETUP_CAMPAIGN := [?]SetupField{.Scoring, .TimeLimit, .Next, .Down, .Ghost, .Controls, .Start}
+SETUP_LOCAL    := [?]SetupField{.Scoring, .TimeLimit, .Next, .Down, .Ghost, .Start}
+
+setup_fields :: proc(mode: game.GameMode) -> []SetupField {
+	return mode == .Campaign ? SETUP_CAMPAIGN[:] : SETUP_LOCAL[:]
+}
 
 update_setup :: proc(app: ^App) {
-	app.setup_sel = menu_navigate(app.setup_sel, SETUP_START + 1)
+	fields := setup_fields(app.mode)
+	app.setup_sel = menu_navigate(app.setup_sel, len(fields))
+	field := fields[app.setup_sel]
 
 	if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.SPACE) {
 		right := rl.IsKeyPressed(.RIGHT)
-		switch app.setup_sel {
-		case 0: app.scoring = game.ScoringSystem((int(app.scoring) + 1) % 2)
-		case 1: cycle_time_limit(app, right)
-		case 2: app.next_disabled = !app.next_disabled
-		case 3: app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
-		case 4: app.ghost_disabled = !app.ghost_disabled
+		#partial switch field {
+		case .Scoring:   app.scoring = game.ScoringSystem((int(app.scoring) + 1) % 2)
+		case .TimeLimit: cycle_time_limit(app, right)
+		case .Next:      app.next_disabled = !app.next_disabled
+		case .Down:      app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
+		case .Ghost:     app.ghost_disabled = !app.ghost_disabled
+		case .Controls:  app.solo_controls = SoloControls((int(app.solo_controls) + 1) % 3)
 		}
 	}
 
-	if rl.IsKeyPressed(.ENTER) && app.setup_sel == SETUP_START {
+	if rl.IsKeyPressed(.ENTER) && field == .Start {
 		start_local_game(app)
 	}
 	if rl.IsKeyPressed(.ESCAPE) {
 		app.screen = .MainMenu
 	}
+}
+
+setup_field_label :: proc(app: ^App, f: SetupField) -> string {
+	switch f {
+	case .Scoring:   return fmt.tprintf("Scoring:     < %s >", scoring_name(app.scoring))
+	case .TimeLimit: return fmt.tprintf("Time Limit:  < %s >", time_limit_name(app.time_limit))
+	case .Next:      return fmt.tprintf("Next Piece:  < %s >", next_name(app.next_disabled))
+	case .Down:      return fmt.tprintf("Down Key:    < %s >", down_mode_name(app.down_mode))
+	case .Ghost:     return fmt.tprintf("Ghost Piece: < %s >", ghost_name(app.ghost_disabled))
+	case .Controls:  return fmt.tprintf("Controls:    < %s >", solo_controls_name(app.solo_controls))
+	case .Start:     return "START"
+	}
+	return ""
 }
 
 cycle_time_limit :: proc(app: ^App, right: bool) {
@@ -545,17 +575,20 @@ update_playing :: proc(app: ^App, dt: f32) {
 	active := s.state == .Playing && !s.paused
 
 	if app.mode == .HeadToHead {
-		if active do sfx_for_intent(gather_intent_p1(app.down_mode))
+		if active do sfx_for_intent(gather_solo(app.solo_controls, app.down_mode))
 		update_head_to_head(app, dt)
 		audio_post(app)
 		return
 	}
 
-	// Local modes.
+	// Local modes. Single player uses the chosen solo scheme; two-player modes
+	// put the LEFT player on AWSD and the RIGHT player on arrows+JIKL.
 	intents: [2]game.PlayerIntent
-	intents[0] = gather_intent_p1(app.down_mode)
-	if s.num_players > 1 {
-		intents[1] = gather_intent_p2(app.down_mode)
+	if app.mode == .Campaign {
+		intents[0] = gather_solo(app.solo_controls, app.down_mode)
+	} else {
+		intents[0] = gather_awsd(app.down_mode)  // left side
+		intents[1] = gather_right(app.down_mode) // right side
 	}
 	if active {
 		sfx_for_intent(intents[0])
@@ -617,7 +650,7 @@ update_head_to_head :: proc(app: ^App, dt: f32) {
 	n := app.net
 
 	intents: [2]game.PlayerIntent
-	intents[0] = gather_intent_p1(app.down_mode)
+	intents[0] = gather_solo(app.solo_controls, app.down_mode)
 	game.session_update(s, dt, intents)
 
 	if n == nil do return
@@ -800,22 +833,16 @@ draw_setup :: proc(app: ^App, sw, sh: i32) {
 	render.text_center("TETRIS CLASSIC", sw / 2, 70, 56, render.COLOR_HIGHLIGHT)
 	render.text_center(MODE_NAMES[app.mode], sw / 2, 150, 30, render.COLOR_TEXT)
 
-	rows := []string{
-		fmt.tprintf("Scoring:     < %s >", scoring_name(app.scoring)),
-		fmt.tprintf("Time Limit:  < %s >", time_limit_name(app.time_limit)),
-		fmt.tprintf("Next Piece:  < %s >", next_name(app.next_disabled)),
-		fmt.tprintf("Down Key:    < %s >", down_mode_name(app.down_mode)),
-		fmt.tprintf("Ghost Piece: < %s >", ghost_name(app.ghost_disabled)),
-		"START",
-	}
+	fields := setup_fields(app.mode)
 	start_y := i32(230)
-	for r, i in rows {
+	for f, i in fields {
 		y := start_y + i32(i) * 52
-		color := render.COLOR_TEXT_DIM
-		if i == app.setup_sel {
-			color = render.COLOR_HIGHLIGHT
-		}
-		render.text_center(strings.clone(r, context.temp_allocator), sw / 2, y, 30, color)
+		color := i == app.setup_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
+		render.text_center(strings.clone(setup_field_label(app, f), context.temp_allocator), sw / 2, y, 30, color)
+	}
+
+	if app.mode != .Campaign {
+		render.text_center("Left: A W S D + Shift     Right: Arrows / J I K L", sw / 2, start_y + i32(len(fields)) * 52 + 16, 20, render.COLOR_TEXT_DIM)
 	}
 	render.text_center("Up/Down move   Left/Right change   Enter start   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
@@ -976,4 +1003,13 @@ ghost_name :: proc(disabled: bool) -> string {
 
 down_mode_name :: proc(m: DownMode) -> string {
 	return m == .FastDrop ? "Fast drop" : "Immediate drop"
+}
+
+solo_controls_name :: proc(c: SoloControls) -> string {
+	switch c {
+	case .Arrows: return "Arrow keys"
+	case .JIKL:   return "J I K L"
+	case .Both:   return "Arrows + JIKL"
+	}
+	return "?"
 }
