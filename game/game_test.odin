@@ -234,6 +234,50 @@ test_shared_spawn_waits_for_partner :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_spawn_drop_collision_no_game_over :: proc(t: ^testing.T) {
+	// A freshly spawned piece dropping into the other player's falling piece must
+	// rest above it without locking or ending the game.
+	b: Board
+	board_init(&b, SHARED_WIDTH, PIT_HEIGHT, 1)
+	p0, p1: Player
+
+	// p1: an already-falling piece sitting low in the shared pit (cols 6-7).
+	p1.has_piece = true
+	p1.current = Piece{kind = .O, rotation = .R0, x = 5, y = 12}
+
+	// p0: just spawned at the top in the same columns.
+	p0.spawn_col = 5
+	p0.next = .O
+	try_spawn(&b, &p0, nil)
+	testing.expect(t, p0.has_piece, "p0 spawned")
+	testing.expect_value(t, p0.current.y, 0)
+
+	others := []^Player{&p1}
+
+	// Hard drop straight into p1: stops just above it, no lock, no game over.
+	dropped, cleared := hard_drop(&b, &p0, others)
+	testing.expect(t, !b.game_over, "dropping into a falling piece must not end the game")
+	testing.expect(t, p0.has_piece, "p0 must not lock onto the other piece")
+	testing.expect_value(t, cleared, 0)
+	testing.expect(t, dropped > 0, "p0 actually dropped")
+	testing.expect_value(t, p0.current.y, 10) // rows 10-11, resting over p1's rows 12-13
+
+	// Continued gravity while p1 is still there: still alive, still unlocked.
+	for _ in 0 ..< 60 {
+		player_update(&b, &p0, 0.05, 0.8, true, others)
+	}
+	testing.expect(t, !b.game_over, "still alive resting on the other piece")
+	testing.expect(t, p0.has_piece, "still unlocked while supported by a falling piece")
+
+	// Once the supporting piece is gone, p0 settles on real terrain — no game over.
+	p1.has_piece = false
+	for _ in 0 ..< 200 {
+		player_update(&b, &p0, 0.05, 0.8, true, others)
+	}
+	testing.expect(t, !b.game_over, "no premature game over after the collision resolves")
+}
+
+@(test)
 test_no_lock_on_partner_piece :: proc(t: ^testing.T) {
 	// A piece resting on the other player's falling piece (not the stack) must
 	// not lock — otherwise it freezes mid-air and leaves a floating block.
