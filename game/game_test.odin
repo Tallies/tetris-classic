@@ -198,9 +198,39 @@ test_shared_pit_respawn_keeps_side :: proc(t: ^testing.T) {
 	player_init(&b, &p, 9, 11) // right-side spawn column
 	testing.expect_value(t, p.spawn_col, 11)
 
-	hard_drop(&b, &p, nil) // lock (no line on an 18-wide row) then respawn
+	hard_drop(&b, &p, nil) // lock (no line on an 18-wide row); spawn is deferred
+	testing.expect(t, !p.has_piece, "spawn is deferred to the next step")
+	try_spawn(&b, &p, nil)
 	testing.expect(t, !b.game_over, "single piece should not end the game")
 	testing.expect_value(t, p.current.x, 11) // respawned on its side, not centre
+}
+
+@(test)
+test_shared_spawn_waits_for_partner :: proc(t: ^testing.T) {
+	// A spawn blocked only by the other player's falling piece must defer, not
+	// top out — this was making coop/competitive end prematurely.
+	b: Board
+	p0, p1: Player
+	board_init(&b, SHARED_WIDTH, PIT_HEIGHT, 1)
+	player_init(&b, &p0, 10, 2)  // left
+	player_init(&b, &p1, 20, 11) // right
+
+	// p0 has just locked (no piece); put p1's piece over p0's spawn columns.
+	p0.has_piece = false
+	p0.next = .O
+	p1.current = Piece{kind = .O, rotation = .R0, x = 2, y = 0}
+	p1.has_piece = true
+
+	others := []^Player{&p1}
+	try_spawn(&b, &p0, others)
+	testing.expect(t, !b.game_over, "partner overlap must not end the game")
+	testing.expect(t, !p0.has_piece, "spawn deferred while partner is overhead")
+
+	// Once the partner's piece is gone, p0 spawns normally.
+	p1.has_piece = false
+	try_spawn(&b, &p0, others)
+	testing.expect(t, p0.has_piece, "spawns once the column is clear")
+	testing.expect(t, !b.game_over, "")
 }
 
 @(test)

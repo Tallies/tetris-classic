@@ -36,7 +36,7 @@ player_init :: proc(b: ^Board, p: ^Player, seed: u64, spawn_col: int) {
 	p.spawn_col = spawn_col >= 0 ? spawn_col : (b.width - 4) / 2
 	refill_bag(p)
 	p.next = draw_piece(p)
-	spawn_piece(b, p, nil)
+	try_spawn(b, p, nil)
 }
 
 // True if any of the other players' falling pieces occupy (x, y).
@@ -69,26 +69,40 @@ piece_collides :: proc(b: ^Board, kind: PieceKind, rot: Rotation, px, py: int, o
 	return false
 }
 
-// Spawn the player's queued next piece at its stored spawn column. Tops out the
-// player on block-out.
-spawn_piece :: proc(b: ^Board, p: ^Player, others: []^Player) {
-	kind := p.next
-	p.next = draw_piece(p)
+// Attempt to spawn the player's queued piece at its stored spawn column.
+//   - Blocked by the settled stack / walls -> genuine top-out (game over).
+//   - Blocked ONLY by another player's falling piece (shared pit) -> no spawn
+//     this frame; the caller retries next frame once that piece has moved on.
+//     This keeps coop/competitive from ending just because the partner's piece
+//     was passing over your spawn column.
+// Returns true once a piece is actually placed.
+try_spawn :: proc(b: ^Board, p: ^Player, others: []^Player) -> bool {
+	if p.has_piece || p.topped_out || b.game_over do return false
 
+	kind := p.next
 	px := p.spawn_col
 	py := 0
 
+	// Settled stack / walls at the spawn area => real top-out.
+	if piece_collides(b, kind, .R0, px, py, nil) {
+		p.topped_out = true
+		b.game_over = true
+		return false
+	}
+	// Only the other player's falling piece is in the way => wait a frame.
+	for off in SHAPES[kind][Rotation.R0] {
+		if occupied_by_other(others, px + off.x, py + off.y) {
+			return false
+		}
+	}
+
+	p.next = draw_piece(p)
 	p.current = Piece{kind = kind, rotation = .R0, x = px, y = py}
 	p.has_piece = true
 	p.locking = false
 	p.lock_timer = 0
 	p.gravity_timer = 0
-
-	if piece_collides(b, kind, .R0, px, py, others) {
-		p.topped_out = true
-		p.has_piece = false
-		b.game_over = true
-	}
+	return true
 }
 
 try_move :: proc(b: ^Board, p: ^Player, dx, dy: int, others: []^Player) -> bool {
@@ -168,12 +182,13 @@ lock_piece :: proc(b: ^Board, p: ^Player, others: []^Player) -> int {
 		return 0 // flashing; commit_clear (driven by the session) finishes it
 	}
 
-	// No lines completed: resolve garbage and spawn straight away.
+	// No lines completed: resolve garbage. The next piece is spawned by the
+	// session on a following frame (via try_spawn), which also lets a shared-pit
+	// spawn wait for the partner's piece instead of topping out.
 	if b.pending_garbage > 0 {
 		insert_garbage(b, b.pending_garbage)
 		b.pending_garbage = 0
 	}
-	spawn_piece(b, p, others)
 	return 0
 }
 

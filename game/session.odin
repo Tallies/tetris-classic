@@ -147,12 +147,19 @@ session_init :: proc(s: ^Session, mode: GameMode, scoring: ScoringSystem, time_l
 // caller can route garbage.
 step_player :: proc(s: ^Session, idx: int, intent: PlayerIntent, dt: f32) -> int {
 	p := &s.players[idx]
-	if !p.active || p.topped_out || !p.has_piece do return 0
+	if !p.active || p.topped_out do return 0
 	b := player_board(s, idx)
 	if b.clearing do return 0 // board frozen during the line-clear flash
 
 	backing: [1]^Player
 	others := others_of(s, idx, &backing)
+
+	// No active piece (just locked, or post-clear): try to spawn the next one.
+	// On a shared pit this may wait a frame for the partner's piece to pass.
+	if !p.has_piece {
+		try_spawn(b, p, others)
+		return 0 // either still waiting, topped out, or freshly spawned
+	}
 
 	// Rotation (edge-triggered).
 	if intent.rotate_cw  do try_rotate(b, p, true, others)
@@ -251,8 +258,8 @@ session_update :: proc(s: ^Session, dt: f32, intents: [2]PlayerIntent) {
 }
 
 // Advance the line-clear flash on a board; when it elapses, remove the rows,
-// score the triggering player, apply pending garbage, and respawn any player on
-// that board that is now without a piece.
+// score the triggering player, and apply pending garbage. Players left without
+// a piece are respawned by step_player (via try_spawn) on the next frame.
 resolve_board_clear :: proc(s: ^Session, bidx: int, dt: f32) {
 	b := &s.boards[bidx]
 	if !b.clearing do return
@@ -273,21 +280,6 @@ resolve_board_clear :: proc(s: ^Session, bidx: int, dt: f32) {
 	s.clear_owner[bidx] = -1
 	if owner >= 0 && n > 0 {
 		handle_clear(s, owner, n)
-	}
-
-	spawn_after_clear(s, bidx)
-}
-
-// Spawn a new piece for every active, non-topped player on `bidx` that lost its
-// piece to the lock that started the clear.
-spawn_after_clear :: proc(s: ^Session, bidx: int) {
-	for i in 0 ..< s.num_players {
-		p := &s.players[i]
-		if !p.active || p.topped_out || p.has_piece do continue
-		if board_index(s, i) != bidx do continue
-		backing: [1]^Player
-		others := others_of(s, i, &backing)
-		spawn_piece(&s.boards[bidx], p, others)
 	}
 }
 
