@@ -41,6 +41,7 @@ App :: struct {
 	lan_sel:     int,
 	server_sel:  int,
 	options_sel: int,
+	paused_sel:  int,
 
 	mode:           game.GameMode,
 	scoring:        game.ScoringSystem,
@@ -566,15 +567,24 @@ begin_head_to_head :: proc(app: ^App) {
 update_playing :: proc(app: ^App, dt: f32) {
 	s := &app.session
 
-	if rl.IsKeyPressed(.P) {
-		game.session_toggle_pause(s)
-	}
-	if s.state == .GameOver && rl.IsKeyPressed(.ENTER) {
-		leave_game(app)
+	// Game over: Enter or Esc returns to the menu.
+	if s.state == .GameOver {
+		if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.ESCAPE) {
+			leave_game(app)
+		}
 		return
 	}
-	if rl.IsKeyPressed(.ESCAPE) {
-		leave_game(app)
+
+	// Paused: the pause menu has focus (no gameplay).
+	if s.paused {
+		update_pause_menu(app)
+		return
+	}
+
+	// Esc or P opens the pause menu.
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.P) {
+		s.paused = true
+		app.paused_sel = 0
 		return
 	}
 
@@ -602,6 +612,22 @@ update_playing :: proc(app: ^App, dt: f32) {
 	}
 	game.session_update(s, dt, intents)
 	audio_post(app)
+}
+
+// Pause menu: Continue or Exit to Menu. Esc resumes.
+update_pause_menu :: proc(app: ^App) {
+	app.paused_sel = menu_navigate(app.paused_sel, 2)
+
+	if rl.IsKeyPressed(.ESCAPE) {
+		app.session.paused = false // Esc = continue
+		return
+	}
+	if rl.IsKeyPressed(.ENTER) {
+		switch app.paused_sel {
+		case 0: app.session.paused = false // Continue
+		case 1: leave_game(app)            // Exit to Menu
+		}
+	}
 }
 
 // Play input-driven sound effects (rotate / hard drop).
@@ -843,6 +869,9 @@ draw_screen :: proc(app: ^App, sw, sh: i32) {
 		p1 := app.mode == .HeadToHead ? "YOU" : "PLAYER 1"
 		p2 := app.mode == .HeadToHead ? "OPPONENT" : "PLAYER 2"
 		render.draw_session(&app.session, sw, sh, p1, p2, app.high_score, app.new_high_score)
+		if app.session.paused {
+			render.draw_pause_menu(sw, sh, app.paused_sel)
+		}
 	}
 }
 

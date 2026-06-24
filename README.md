@@ -55,7 +55,8 @@ Requires the Odin toolchain (tested with the 2026-06 nightly). raylib and
 - **Right player:** Arrow keys **or** `J`/`I`/`K`/`L` (+`U` for CCW) — both work,
   handy when a laptop's arrow keys are cramped.
 
-`P` pause · `Esc` leave to menu · `Enter` confirm / return after game over.
+`Esc` or `P` open the pause menu (Continue / Exit to Menu) · `Enter` confirm /
+return after game over.
 `M` toggle music · `N` toggle sound effects.
 
 ## Single-player extras

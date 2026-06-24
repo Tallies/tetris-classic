@@ -22,11 +22,26 @@ draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string, hi
 		draw_dual_layout(s, sw, sh, p1_name, p2_name)
 	}
 
-	if s.paused {
-		draw_overlay(sw, sh, "PAUSED", "Press P to resume")
-	} else if s.state == .GameOver {
+	// The pause menu (drawn by the app over the frozen game) handles the paused
+	// state; here we only draw the game-over result.
+	if !s.paused && s.state == .GameOver {
 		draw_result(s, sw, sh, p1_name, p2_name, high_score, new_high)
 	}
+}
+
+// Pause overlay menu drawn over the frozen game.
+draw_pause_menu :: proc(sw, sh: i32, selected: int) {
+	rl.DrawRectangleRec({0, 0, f32(sw), f32(sh)}, {0, 0, 0, 175})
+	text_center("PAUSED", sw / 2, sh / 2 - 90, 52, COLOR_HIGHLIGHT)
+
+	options := []string{"Continue", "Exit to Menu"}
+	for opt, i in options {
+		y := sh / 2 + i32(i) * 48
+		color := i == selected ? COLOR_HIGHLIGHT : COLOR_TEXT_DIM
+		prefix := i == selected ? "> " : "   "
+		text_center(fmt.tprintf("%s%s", prefix, opt), sw / 2, y, 30, color)
+	}
+	text_center("Up/Down select   Enter confirm   Esc continue", sw / 2, sh - 60, 18, COLOR_TEXT_DIM)
 }
 
 // The level used to pick the background: the highest level among active players
