@@ -38,12 +38,8 @@ jobs:
             name: windows-amd64
             client: tetris.exe
             server: tetris-server.exe
-          - os: macos-14   # Apple Silicon
-            name: macos-arm64
-            client: tetris
-            server: tetris-server
-          - os: macos-13   # Intel
-            name: macos-amd64
+          - os: macos-14   # Apple Silicon (Intel macos-13 runners are being
+            name: macos-arm64 # retired by GitHub and can hang waiting for a runner)
             client: tetris
             server: tetris-server
     steps:

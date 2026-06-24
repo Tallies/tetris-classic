@@ -159,7 +159,7 @@ glibc. For ARM hosts, build with `docker buildx --platform linux/arm64`.
 ### Continuous builds
 
 `.github/workflows/build.yml` builds native client + server binaries for Linux,
-Windows, and macOS (Intel + Apple Silicon) on every push, and attaches them to a
+Windows, and macOS (Apple Silicon) on every push, and attaches them to a
 GitHub Release when you push a `v*` tag.
 
 ## Tests
