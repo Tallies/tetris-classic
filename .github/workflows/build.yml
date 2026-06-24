@@ -70,6 +70,7 @@ jobs:
           odin test game
           odin test net
           odin test server
+          odin test audio
 
       - name: Build client
         run: odin build . -out:${{ matrix.client }} -o:speed

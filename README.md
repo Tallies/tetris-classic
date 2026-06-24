@@ -51,6 +51,15 @@ Requires the Odin toolchain (tested with the 2026-06 nightly). raylib and
 **Player 2 (local 2P):** `A`/`D` move, `W` rotate CW, `Left Shift` rotate CCW, `S` drop.
 
 `P` pause · `Esc` leave to menu · `Enter` confirm / return after game over.
+`M` toggle music · `N` toggle sound effects.
+
+## Audio
+
+Music and sound are **synthesized procedurally at runtime** (a small chiptune
+engine in `audio/`) — there are no audio asset files. The theme is an original
+chiptune arrangement of *Korobeiniki*, the public-domain Russian folk melody;
+its tempo rises with the level. Sound effects (rotate, drop, line clear, Tetris,
+level up, game over) are short generated waveforms. Toggle either with `M` / `N`.
 
 The **down key** is the only drop control; its behavior is set in options:
 
@@ -145,6 +154,7 @@ GitHub Release when you push a `v*` tag.
 odin test game     # board logic, scoring, garbage, seven-bag
 odin test net      # localhost direct host/join message round-trip
 odin test server   # in-process create/browse/join/match + gameplay relay
+odin test audio    # music data (bar sums), note frequencies, loop wrap
 ```
 
 ## Project layout
@@ -153,6 +163,7 @@ odin test server   # in-process create/browse/join/match + gameplay relay
 main.odin / app.odin / input.odin / menu.odin   app state machine, loop, input
 game/      core simulation (no rendering/net): types, board, scoring, session
 render/    raylib drawing: palette, blocks, pits, HUD, layouts
+audio/     procedural chiptune engine: synth, Korobeiniki arrangement, SFX
 net/       client TCP transport + gameplay & lobby wire protocols (package `netplay`)
 server/    dedicated matchmaking + relay server (separate binary, package `main`)
 ```
@@ -160,7 +171,7 @@ server/    dedicated matchmaking + relay server (separate binary, package `main`
 ## Roadmap
 
 - Decorative per-level background art (original-style) behind the pits.
-- Sound effects and music (raylib `raudio` / `vendor:miniaudio`).
 - Hold piece, configurable controls, high-score table.
+- Richer arrangement / per-level music variations.
 - WASM build target (raylib supports it) for browser play.
 ```

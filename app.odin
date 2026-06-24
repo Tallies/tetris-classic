@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:strings"
 import rl "vendor:raylib"
 
+import "audio"
 import "game"
 import "render"
 import netplay "net"
@@ -71,6 +72,11 @@ App :: struct {
 	browse_count:    int,
 	browse_sel:      int,
 
+	// previous-frame values for deriving sound-effect triggers
+	prev_lines:      int,
+	prev_level:      int,
+	prev_game_over:  bool,
+
 	session: game.Session,
 }
 
@@ -88,6 +94,9 @@ run :: proc() {
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 
+	audio.init()
+	defer audio.shutdown()
+
 	app := App{}
 	app.scoring = .TetrisClassic
 	app.time_limit = .Unlimited
@@ -96,6 +105,9 @@ run :: proc() {
 		dt := rl.GetFrameTime()
 		sw := rl.GetScreenWidth()
 		sh := rl.GetScreenHeight()
+
+		handle_audio_hotkeys(&app)
+		audio.update()
 
 		rl.BeginDrawing()
 		switch app.screen {
@@ -114,6 +126,7 @@ run :: proc() {
 		case .Playing:      update_playing(&app, dt)
 		}
 		draw_screen(&app, sw, sh)
+		draw_audio_hint(sw, sh)
 		rl.EndDrawing()
 	}
 
@@ -182,6 +195,7 @@ start_local_game :: proc(app: ^App) {
 	game.session_init(&app.session, app.mode, app.scoring, app.time_limit, app.seed)
 	app.session.next_disabled = app.next_disabled
 	app.session.ghost_disabled = app.ghost_disabled
+	reset_audio_tracking(app)
 	app.screen = .Playing
 }
 
@@ -507,6 +521,7 @@ begin_head_to_head :: proc(app: ^App) {
 	app.session.ghost_disabled = app.ghost_disabled
 	app.snapshot_timer = 0
 	app.sent_game_over = false
+	reset_audio_tracking(app)
 	app.screen = .Playing
 }
 
@@ -527,8 +542,12 @@ update_playing :: proc(app: ^App, dt: f32) {
 		return
 	}
 
+	active := s.state == .Playing && !s.paused
+
 	if app.mode == .HeadToHead {
+		if active do sfx_for_intent(gather_intent_p1(app.down_mode))
 		update_head_to_head(app, dt)
+		audio_post(app)
 		return
 	}
 
@@ -538,7 +557,59 @@ update_playing :: proc(app: ^App, dt: f32) {
 	if s.num_players > 1 {
 		intents[1] = gather_intent_p2(app.down_mode)
 	}
+	if active {
+		sfx_for_intent(intents[0])
+		if s.num_players > 1 do sfx_for_intent(intents[1])
+	}
 	game.session_update(s, dt, intents)
+	audio_post(app)
+}
+
+// Play input-driven sound effects (rotate / hard drop).
+sfx_for_intent :: proc(i: game.PlayerIntent) {
+	if i.rotate_cw || i.rotate_ccw do audio.play(.Rotate)
+	if i.hard_drop do audio.play(.Drop)
+}
+
+// Update music tempo from the level and fire state-driven SFX (line clears,
+// level up, game over) by diffing against the previous frame.
+audio_post :: proc(app: ^App) {
+	s := &app.session
+	lines, level := local_progress(app)
+	audio.set_level(level)
+
+	if level > app.prev_level do audio.play(.LevelUp)
+	if lines > app.prev_lines {
+		audio.play(lines - app.prev_lines >= 4 ? .Tetris : .LineClear)
+	}
+	if s.state == .GameOver && !app.prev_game_over {
+		audio.play(.GameOver)
+		app.prev_game_over = true
+	}
+	app.prev_lines = lines
+	app.prev_level = level
+}
+
+// Lines cleared and top level for the locally-controlled player(s). In
+// head-to-head only our own pit (player 0) counts; the opponent is a mirror.
+local_progress :: proc(app: ^App) -> (lines: int, level: int) {
+	s := &app.session
+	level = 1
+	if app.mode == .HeadToHead {
+		return s.players[0].lines, max(1, s.players[0].level)
+	}
+	for i in 0 ..< s.num_players {
+		if s.players[i].active {
+			lines += s.players[i].lines
+			level = max(level, s.players[i].level)
+		}
+	}
+	return
+}
+
+reset_audio_tracking :: proc(app: ^App) {
+	app.prev_lines, app.prev_level = local_progress(app)
+	app.prev_game_over = false
 }
 
 update_head_to_head :: proc(app: ^App, dt: f32) {
@@ -633,6 +704,25 @@ apply_snapshot :: proc(s: ^game.Session, sp: netplay.SnapshotPayload) {
 	p.has_piece = sp.has_piece != 0
 	p.topped_out = sp.topped_out != 0
 	p.active = true
+}
+
+// Global mute toggles. Suppressed on text-entry screens so typed letters (e.g.
+// a server address or game name) don't toggle audio.
+handle_audio_hotkeys :: proc(app: ^App) {
+	#partial switch app.screen {
+	case .NetJoin, .ServerSetup, .CreateGame, .JoinPassword:
+		return
+	}
+	if rl.IsKeyPressed(.M) do audio.set_music_enabled(!audio.music_enabled())
+	if rl.IsKeyPressed(.N) do audio.set_sfx_enabled(!audio.sfx_enabled())
+}
+
+// A small persistent reminder of the audio mute keys.
+draw_audio_hint :: proc(sw, sh: i32) {
+	on :: proc(b: bool) -> string { return b ? "on" : "off" }
+	txt := fmt.ctprintf("M music: %s   N sound: %s", on(audio.music_enabled()), on(audio.sfx_enabled()))
+	w := rl.MeasureText(txt, 16)
+	rl.DrawText(txt, sw - w - 12, sh - 22, 16, {150, 150, 165, 170})
 }
 
 make_seed :: proc() -> u64 {
