@@ -99,6 +99,7 @@ run :: proc() {
 	rl.InitWindow(1280, 720, "Tetris Classic")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
+	rl.SetExitKey(.KEY_NULL) // we handle Esc ourselves (pause menu); don't let it quit
 
 	audio.init()
 	defer audio.shutdown()
