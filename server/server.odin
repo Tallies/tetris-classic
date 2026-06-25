@@ -24,12 +24,13 @@ ClientState :: enum {
 }
 
 Client :: struct {
-	socket:  net.TCP_Socket,
-	state:   ClientState,
-	rx:      [dynamic]u8,
-	partner: int, // client slot index, or -1
-	lobby:   int, // lobby slot index while Waiting, or -1
-	alive:   bool,
+	socket:     net.TCP_Socket,
+	state:      ClientState,
+	rx:         [dynamic]u8,
+	partner:    int,  // client slot index, or -1
+	lobby:      int,  // lobby slot index while Waiting, or -1
+	alive:      bool,
+	classified: bool, // whether we've decided this is a game client vs HTTP probe
 }
 
 Lobby :: struct {
@@ -166,8 +167,46 @@ relay_client :: proc(s: ^Server, i: int) {
 	clear(&s.clients[i].rx)
 }
 
+// HTTP methods we answer health probes for. The game protocol starts every
+// message with a small little-endian length prefix, so its first bytes never
+// match these ASCII method names — a reliable way to tell a health check from a
+// player on the same port.
+HTTP_METHODS := []string{"GET ", "HEAD ", "POST ", "PUT ", "OPTIONS ", "DELETE "}
+
+// Classify a fresh connection's first bytes. http = it's an HTTP request;
+// need_more = a method prefix matches but more bytes are needed to be sure.
+sniff_http :: proc(buf: []u8) -> (http: bool, need_more: bool) {
+	for m in HTTP_METHODS {
+		n := min(len(buf), len(m))
+		if n > 0 && string(buf[:n]) == m[:n] {
+			return len(buf) >= len(m), len(buf) < len(m)
+		}
+	}
+	return false, false
+}
+
+// Reply to an HTTP health probe with 200 OK and close.
+send_http_health :: proc(s: ^Server, i: int) {
+	resp := "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+	send_raw(s, i, transmute([]u8)resp)
+}
+
 // Parse and handle control frames from a lobby-phase client.
 process_lobby_client :: proc(s: ^Server, i: int) {
+	// Before treating a new connection as a player, check whether it's an HTTP
+	// health probe (e.g. from the hosting platform) and answer it if so.
+	if !s.clients[i].classified {
+		if len(s.clients[i].rx) == 0 do return
+		http, need_more := sniff_http(s.clients[i].rx[:])
+		if need_more do return
+		if http {
+			send_http_health(s, i)
+			drop_client(s, i)
+			return
+		}
+		s.clients[i].classified = true
+	}
+
 	consumed := 0
 	for {
 		t, body, total, ok := netplay.read_ctrl_frame(s.clients[i].rx[consumed:])

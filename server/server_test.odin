@@ -4,6 +4,43 @@ import "core:testing"
 import "core:time"
 import netplay "../net"
 import "core:net"
+import "core:strings"
+
+// An HTTP health probe on the game port gets a 200 OK (so platform health
+// checks pass) without disturbing the game protocol.
+@(test)
+test_http_health_probe :: proc(t: ^testing.T) {
+	PORT :: 7803
+	s: Server
+	testing.expect(t, server_start(&s, PORT), "server starts")
+	defer server_shutdown(&s)
+
+	sock, derr := net.dial_tcp_from_endpoint(net.Endpoint{address = net.IP4_Loopback, port = PORT})
+	testing.expect(t, derr == nil, "probe connects")
+	defer net.close(sock)
+	net.set_blocking(sock, false)
+
+	req := "GET / HTTP/1.1\r\nHost: health\r\n\r\n"
+	_, _ = net.send_tcp(sock, transmute([]u8)req)
+
+	got: [dynamic]u8
+	defer delete(got)
+	ok := false
+	for _ in 0 ..< 300 {
+		server_tick(&s)
+		buf: [512]u8
+		n, rerr := net.recv_tcp(sock, buf[:])
+		if rerr == nil && n > 0 {
+			append(&got, ..buf[:n])
+			if strings.has_prefix(string(got[:]), "HTTP/1.1 200") {
+				ok = true
+				break
+			}
+		}
+		time.sleep(time.Millisecond)
+	}
+	testing.expect(t, ok, "health probe receives HTTP 200")
+}
 
 // Full lobby + relay flow against an in-process server: create, browse, join,
 // match (with correct host roles), then a gameplay snapshot relayed end to end.

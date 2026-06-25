@@ -187,14 +187,18 @@ The root `Dockerfile` is what a Docker-native PaaS like
 the Dockerfile, builds, and runs the server. The server reads `$PORT` if the host
 injects one, and `EXPOSE 7777` advertises the default.
 
-> **Important — the server speaks raw TCP, not HTTP.** Hosts that only route
-> HTTP/HTTPS (with HTTP health checks and SSL termination) cannot carry the game
-> protocol, and an HTTP health check against the raw-TCP port will fail. Before
-> relying on SnapDeploy, confirm it supports a **raw TCP service / TCP health
-> check** (and exposes a reachable TCP port to clients). If it is HTTP-only, the
-> server would need its transport changed to **WebSocket** (rides on HTTP/S) —
-> a larger change to both client and server that isn't done here. A VM or a
-> TCP-capable host (Fly.io, a plain Docker host, etc.) runs it as-is.
+**HTTP health checks pass on the same port.** The server sniffs each new
+connection: an HTTP request (a platform health probe) gets a `200 OK`, while the
+game protocol is handled normally — so a single port serves both, no second port
+or extra config needed.
+
+> **Caveat — the game protocol is raw TCP.** The health check now succeeds, but
+> players still reach the server over raw TCP on the exposed port. That works if
+> the host passes TCP through to the container; if the host only proxies HTTP to
+> the public internet, players can't connect even though the deploy is healthy.
+> In that case the transport would need to move to **WebSocket** (rides on
+> HTTP/S) — a larger change not done here. A VM or TCP-capable host (Fly.io, a
+> plain Docker host, etc.) runs it as-is.
 
 ### Continuous builds
 
