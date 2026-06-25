@@ -172,7 +172,7 @@ piece_grounded :: proc(b: ^Board, p: ^Player) -> bool {
 lock_piece :: proc(b: ^Board, p: ^Player, others: []^Player) -> int {
 	if !p.has_piece do return 0
 	c := p.current
-	color := PIECE_COLOR[c.kind]
+	color := PIECE_COLOR[c.kind] // locked blocks always use the original colour
 	for off in SHAPES[c.kind][c.rotation] {
 		x := c.x + off.x
 		y := c.y + off.y

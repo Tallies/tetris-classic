@@ -136,6 +136,9 @@ session_init :: proc(s: ^Session, mode: GameMode, scoring: ScoringSystem, time_l
 		// Spawn the two players toward opposite sides of the shared pit.
 		player_init(&s.boards[0], &s.players[0], seed ~ 0xA1, SHARED_WIDTH / 4 - 2)
 		player_init(&s.boards[0], &s.players[1], seed ~ 0xB2, 3 * SHARED_WIDTH / 4 - 2)
+		// Shade player 2's blocks darker so the two players are distinguishable
+		// in the shared pit.
+		s.players[1].tint = true
 
 	case .DualPit, .HeadToHead:
 		s.num_boards = 2

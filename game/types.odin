@@ -95,6 +95,7 @@ Board :: struct {
 // Player references the Board it plays on by index in the Session.
 Player :: struct {
 	active:    bool, // false for unused second player in single-player modes
+	tint:      bool, // shade this player's falling piece darker (2nd player, shared pit)
 	current:   Piece,
 	next:      PieceKind,
 	has_piece: bool,

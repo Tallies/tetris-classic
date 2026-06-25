@@ -54,6 +54,15 @@ invert :: proc(c: rl.Color) -> rl.Color {
 	return {255 - c.r, 255 - c.g, 255 - c.b, c.a}
 }
 
+// Darker shade of a colour for the second player's falling piece (shared-pit
+// modes), preserving hue. Only the active piece/ghost are shaded; locked blocks
+// keep the original colour.
+P2_SHADE :: f32(0.6)
+
+shade_p2 :: proc(c: rl.Color) -> rl.Color {
+	return {u8(f32(c.r) * P2_SHADE), u8(f32(c.g) * P2_SHADE), u8(f32(c.b) * P2_SHADE), c.a}
+}
+
 // Lighten / darken helpers for bevels.
 lighten :: proc(c: rl.Color, amt: u8) -> rl.Color {
 	return {

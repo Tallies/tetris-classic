@@ -10,10 +10,12 @@ import "../game"
 // Flash blink period for clearing rows (seconds per on/off half-cycle).
 FLASH_BLINK :: f32(0.06)
 
-// A beveled block face at pixel (px, py) of given size for a Cell color index.
-draw_block :: proc(px, py, size: f32, ci: game.Cell, alpha: f32 = 1.0) {
+// A beveled block face at pixel (px, py) of given size for a Cell colour index.
+// `tint` shades it darker (second player's falling piece).
+draw_block :: proc(px, py, size: f32, ci: game.Cell, alpha: f32 = 1.0, tint := false) {
 	if ci == game.CELL_EMPTY do return
 	base := BLOCK_COLORS[ci]
+	if tint do base = shade_p2(base)
 	if alpha < 1.0 {
 		base.a = u8(f32(base.a) * alpha)
 	}
@@ -32,9 +34,10 @@ draw_block_rgb :: proc(px, py, size: f32, base: rl.Color) {
 	rl.DrawRectangleRec({px + size - bevel, py, bevel, size}, darken(base, 50))
 }
 
-// Ghost outline at a cell.
-draw_ghost_cell :: proc(px, py, size: f32, ci: game.Cell) {
+// Ghost outline at a cell. `tint` matches the second player's piece shade.
+draw_ghost_cell :: proc(px, py, size: f32, ci: game.Cell, tint := false) {
 	base := BLOCK_COLORS[ci]
+	if tint do base = shade_p2(base)
 	base.a = 28 // faint fill so it's a hint, not a distraction
 	rl.DrawRectangleRec({px, py, size, size}, base)
 	rl.DrawRectangleLinesEx({px, py, size, size}, 1, {base.r, base.g, base.b, 70})
@@ -102,16 +105,16 @@ draw_player_piece :: proc(s: ^game.Session, idx: int, ox, oy, cell: f32) {
 			vx := c.x + off.x
 			vy := gy + off.y - game.SPAWN_BUFFER
 			if vy < 0 do continue
-			draw_ghost_cell(ox + f32(vx) * cell, oy + f32(vy) * cell, cell, ci)
+			draw_ghost_cell(ox + f32(vx) * cell, oy + f32(vy) * cell, cell, ci, p.tint)
 		}
 	}
 
-	// Active piece.
+	// Active piece (shaded for the second player in a shared pit).
 	for off in game.SHAPES[c.kind][c.rotation] {
 		vx := c.x + off.x
 		vy := c.y + off.y - game.SPAWN_BUFFER
 		if vy < 0 do continue
-		draw_block(ox + f32(vx) * cell, oy + f32(vy) * cell, cell, ci)
+		draw_block(ox + f32(vx) * cell, oy + f32(vy) * cell, cell, ci, 1.0, p.tint)
 	}
 }
 
