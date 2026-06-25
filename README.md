@@ -119,8 +119,10 @@ Two ways to connect, both under the **Head-to-Head** menu:
 
 ### Direct (LAN) — same network, no server
 
-1. One player picks **Head-to-Head → Direct (LAN) → Host Game** and shares their IP.
-2. The other picks **Direct (LAN) → Join Game** and types the host's address.
+1. One player picks **Head-to-Head → Direct (LAN) → Host Game**; the lobby shows
+   the host's LAN address (e.g. `192.168.1.18:7777`) to read out.
+2. The other picks **Direct (LAN) → Join Game** and types that `host` or
+   `host:port`.
 3. Uses TCP port **7777**. Over the internet this needs the host to port-forward;
    on a LAN/VPN it just works.
 

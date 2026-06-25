@@ -292,7 +292,12 @@ start_host :: proc(app: ^App) {
 	}
 	app.net = n
 	app.is_host = true
-	app.lobby_status = fmt.aprintf("Hosting on port %d - waiting for player...", netplay.DEFAULT_PORT)
+	ip := netplay.host_lan_ip()
+	if ip != "" {
+		app.lobby_status = fmt.aprintf("Have the other player join:  %s:%d", ip, netplay.DEFAULT_PORT)
+	} else {
+		app.lobby_status = fmt.aprintf("Hosting on port %d - waiting for player...", netplay.DEFAULT_PORT)
+	}
 	app.screen = .Lobby
 }
 
