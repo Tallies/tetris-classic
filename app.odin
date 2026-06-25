@@ -190,28 +190,44 @@ SetupField :: enum {
 
 SETUP_CAMPAIGN := [?]SetupField{.Scoring, .TimeLimit, .Next, .Down, .Ghost, .Controls, .Start}
 SETUP_LOCAL    := [?]SetupField{.Scoring, .TimeLimit, .Next, .Down, .Ghost, .Start}
+SETUP_Y0 :: i32(230)
+SETUP_DY :: i32(52)
 
 setup_fields :: proc(mode: game.GameMode) -> []SetupField {
 	return mode == .Campaign ? SETUP_CAMPAIGN[:] : SETUP_LOCAL[:]
 }
 
+cycle_setup_field :: proc(app: ^App, f: SetupField, right: bool) {
+	#partial switch f {
+	case .Scoring:   app.scoring = game.ScoringSystem((int(app.scoring) + 1) % 2)
+	case .TimeLimit: cycle_time_limit(app, right)
+	case .Next:      app.next_disabled = !app.next_disabled
+	case .Down:      app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
+	case .Ghost:     app.ghost_disabled = !app.ghost_disabled
+	case .Controls:  app.solo_controls = SoloControls((int(app.solo_controls) + 1) % 4)
+	}
+}
+
 update_setup :: proc(app: ^App) {
 	fields := setup_fields(app.mode)
 	app.setup_sel = menu_navigate(app.setup_sel, len(fields))
-	field := fields[app.setup_sel]
 
-	if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.SPACE) {
-		right := rl.IsKeyPressed(.RIGHT)
-		#partial switch field {
-		case .Scoring:   app.scoring = game.ScoringSystem((int(app.scoring) + 1) % 2)
-		case .TimeLimit: cycle_time_limit(app, right)
-		case .Next:      app.next_disabled = !app.next_disabled
-		case .Down:      app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
-		case .Ghost:     app.ghost_disabled = !app.ghost_disabled
-		case .Controls:  app.solo_controls = SoloControls((int(app.solo_controls) + 1) % 4)
+	// Mouse: hover selects a row; click starts (START) or cycles the value.
+	if h, clicked := mouse_rows_pick(len(fields), SETUP_Y0, SETUP_DY); h >= 0 {
+		app.setup_sel = h
+		if clicked {
+			if fields[h] == .Start {
+				start_local_game(app)
+			} else {
+				cycle_setup_field(app, fields[h], true)
+			}
 		}
 	}
 
+	field := fields[app.setup_sel]
+	if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.SPACE) {
+		cycle_setup_field(app, field, rl.IsKeyPressed(.RIGHT))
+	}
 	if rl.IsKeyPressed(.ENTER) && field == .Start {
 		start_local_game(app)
 	}
@@ -379,23 +395,49 @@ update_server_menu :: proc(app: ^App) {
 // Personal options for online play (down-key behavior + scoring tradeoffs).
 // These edit the same app fields the local Setup screen uses, so they apply
 // everywhere.
+OPTIONS_Y0 :: i32(280)
+OPTIONS_DY :: i32(56)
+
+cycle_option_field :: proc(app: ^App, i: int) {
+	switch i {
+	case 0: app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
+	case 1: app.ghost_disabled = !app.ghost_disabled
+	case 2: app.next_disabled = !app.next_disabled
+	}
+}
+
 update_options :: proc(app: ^App) {
 	app.options_sel = menu_navigate(app.options_sel, 3) // Down / Ghost / Next
 
+	if h, clicked := mouse_rows_pick(3, OPTIONS_Y0, OPTIONS_DY); h >= 0 {
+		app.options_sel = h
+		if clicked do cycle_option_field(app, h)
+	}
 	if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.SPACE) {
-		switch app.options_sel {
-		case 0: app.down_mode = DownMode((int(app.down_mode) + 1) % 2)
-		case 1: app.ghost_disabled = !app.ghost_disabled
-		case 2: app.next_disabled = !app.next_disabled
-		}
+		cycle_option_field(app, app.options_sel)
 	}
 	if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.ESCAPE) {
 		app.screen = .ServerMenu
 	}
 }
 
+CREATE_Y0 :: i32(240)
+CREATE_DY :: i32(60)
+
 update_create_game :: proc(app: ^App) {
-	app.create_field = menu_navigate(app.create_field, 4)
+	app.create_field = menu_navigate(app.create_field, 4) // name / password / public / CREATE
+
+	// Mouse: hover selects a field; click toggles public, submits CREATE, or just
+	// focuses a text field for typing.
+	if h, clicked := mouse_rows_pick(4, CREATE_Y0, CREATE_DY); h >= 0 {
+		app.create_field = h
+		if clicked {
+			switch h {
+			case 2: app.create_public = !app.create_public
+			case 3: if app.name_len > 0 do submit_create(app)
+			}
+		}
+	}
 
 	switch app.create_field {
 	case 0: edit_text(app.name_buf[:], &app.name_len)
@@ -426,6 +468,20 @@ start_browse :: proc(app: ^App) {
 	start_connect(app, host, port, true, .Browse)
 }
 
+BROWSE_Y0 :: i32(200)
+BROWSE_DY :: i32(44)
+
+join_browse :: proc(app: ^App, idx: int) {
+	g := app.browse[idx]
+	set_buf(app.name_buf[:], &app.name_len, netplay.buf_to_name(g.name[:]))
+	if g.has_password != 0 {
+		app.pass_len = 0
+		app.screen = .JoinPassword
+	} else {
+		submit_join(app, "")
+	}
+}
+
 update_browse_games :: proc(app: ^App) {
 	if app.net != nil {
 		handle_net_events(app, netplay.poll(app.net))
@@ -435,19 +491,16 @@ update_browse_games :: proc(app: ^App) {
 
 	if app.browse_count > 0 {
 		app.browse_sel = menu_navigate(app.browse_sel, app.browse_count)
+		if h, clicked := mouse_rows_pick(app.browse_count, BROWSE_Y0, BROWSE_DY); h >= 0 {
+			app.browse_sel = h
+			if clicked do join_browse(app, h)
+		}
 	}
 	if rl.IsKeyPressed(.R) && app.net != nil {
 		netplay.send_list(app.net)
 	}
 	if rl.IsKeyPressed(.ENTER) && app.browse_count > 0 {
-		g := app.browse[app.browse_sel]
-		set_buf(app.name_buf[:], &app.name_len, netplay.buf_to_name(g.name[:]))
-		if g.has_password != 0 {
-			app.pass_len = 0
-			app.screen = .JoinPassword
-		} else {
-			submit_join(app, "")
-		}
+		join_browse(app, app.browse_sel)
 	}
 	if rl.IsKeyPressed(.ESCAPE) {
 		leave_game(app)
@@ -685,7 +738,7 @@ update_playing :: proc(app: ^App, dt: f32) {
 		intents[1] = gather_right(app.down_mode) // right side
 	}
 	if active {
-		apply_mouse_gameplay(&intents[0]) // mouse controls player 0
+		apply_mouse_gameplay(&intents[0], app.down_mode) // mouse controls player 0
 		sfx_for_intent(intents[0])
 		if s.num_players > 1 do sfx_for_intent(intents[1])
 	}
@@ -694,9 +747,12 @@ update_playing :: proc(app: ^App, dt: f32) {
 }
 
 // Overlay mouse control onto player 0's intent: horizontal mouse movement snaps
-// the piece to the column under the cursor, right-click rotates, left-click
-// hard-drops. Keyboard still works when the mouse is idle.
-apply_mouse_gameplay :: proc(intent: ^game.PlayerIntent) {
+// the piece to the column under the cursor, right-click rotates, and the left
+// button behaves exactly like the Down key (per `down_mode`): a press in
+// Immediate mode hard-drops; holding in Fast-drop mode soft-drops. Keyboard
+// still works when the mouse is idle. Down state is OR'd in so it never clears
+// the keyboard's.
+apply_mouse_gameplay :: proc(intent: ^game.PlayerIntent, down_mode: DownMode) {
 	pit := render.player0_pit
 	if pit.valid && abs(rl.GetMouseDelta().x) > 0 {
 		col := int((rl.GetMousePosition().x - pit.ox) / pit.cell)
@@ -704,7 +760,13 @@ apply_mouse_gameplay :: proc(intent: ^game.PlayerIntent) {
 		intent.target_x = col - 1 // roughly centre the 4-wide piece box
 	}
 	if rl.IsMouseButtonPressed(.RIGHT) do intent.rotate_cw = true
-	if rl.IsMouseButtonPressed(.LEFT)  do intent.hard_drop = true
+
+	switch down_mode {
+	case .FastDrop:
+		if rl.IsMouseButtonDown(.LEFT) do intent.soft_drop = true
+	case .Immediate:
+		if rl.IsMouseButtonPressed(.LEFT) do intent.hard_drop = true
+	}
 }
 
 // Pause menu: Continue or Exit to Menu. Esc resumes.
@@ -840,7 +902,7 @@ update_head_to_head :: proc(app: ^App, dt: f32, active: bool) {
 	intents: [2]game.PlayerIntent
 	intents[0] = gather_solo(app.solo_controls, app.down_mode)
 	if active {
-		apply_mouse_gameplay(&intents[0])
+		apply_mouse_gameplay(&intents[0], app.down_mode)
 		sfx_for_intent(intents[0])
 	}
 	game.session_update(s, dt, intents)
@@ -1032,17 +1094,16 @@ draw_setup :: proc(app: ^App, sw, sh: i32) {
 	render.text_center(MODE_NAMES[app.mode], sw / 2, 150, 30, render.COLOR_TEXT)
 
 	fields := setup_fields(app.mode)
-	start_y := i32(230)
 	for f, i in fields {
-		y := start_y + i32(i) * 52
+		y := SETUP_Y0 + i32(i) * SETUP_DY
 		color := i == app.setup_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
 		render.text_center(strings.clone(setup_field_label(app, f), context.temp_allocator), sw / 2, y, 30, color)
 	}
 
 	if app.mode != .Campaign {
-		render.text_center("Left: A W S D + Shift     Right: Arrows / J I K L", sw / 2, start_y + i32(len(fields)) * 52 + 16, 20, render.COLOR_TEXT_DIM)
+		render.text_center("Left: A W S D + Shift     Right: Arrows / J I K L", sw / 2, SETUP_Y0 + i32(len(fields)) * SETUP_DY + 16, 20, render.COLOR_TEXT_DIM)
 	}
-	render.text_center("Up/Down move   Left/Right change   Enter start   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
+	render.text_center("Up/Down or mouse   Left/Right or click changes   Enter/click start   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
 draw_net_join :: proc(app: ^App, sw, sh: i32) {
@@ -1122,13 +1183,12 @@ draw_options :: proc(app: ^App, sw, sh: i32) {
 		fmt.tprintf("Ghost Piece: < %s >", ghost_name(app.ghost_disabled)),
 		fmt.tprintf("Next Piece:  < %s >", next_name(app.next_disabled)),
 	}
-	start_y := i32(280)
 	for r, i in rows {
-		y := start_y + i32(i) * 56
+		y := OPTIONS_Y0 + i32(i) * OPTIONS_DY
 		color := i == app.options_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
 		render.text_center(strings.clone(r, context.temp_allocator), sw / 2, y, 30, color)
 	}
-	render.text_center("Up/Down move   Left/Right change   Enter/Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
+	render.text_center("Up/Down or mouse   Left/Right or click changes   Enter/Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
 draw_create_game :: proc(app: ^App, sw, sh: i32) {
@@ -1145,13 +1205,12 @@ draw_create_game :: proc(app: ^App, sw, sh: i32) {
 		fmt.tprintf("Public:    < %s >", public_val),
 		"CREATE",
 	}
-	start_y := i32(240)
 	for r, i in rows {
-		y := start_y + i32(i) * 60
+		y := CREATE_Y0 + i32(i) * CREATE_DY
 		color := i == app.create_field ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
 		render.text_center(strings.clone(r, context.temp_allocator), sw / 2, y, 30, color)
 	}
-	render.text_center("Up/Down field   type to edit   Left/Right toggle   Enter create   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
+	render.text_center("Up/Down or click field   type to edit   click CREATE   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
 draw_browse_games :: proc(app: ^App, sw, sh: i32) {
@@ -1161,7 +1220,6 @@ draw_browse_games :: proc(app: ^App, sw, sh: i32) {
 	if app.browse_count == 0 {
 		render.text_center("No open games. Press R to refresh.", sw / 2, sh / 2, 26, render.COLOR_TEXT_DIM)
 	} else {
-		start_y := i32(200)
 		for i in 0 ..< app.browse_count {
 			g := app.browse[i]
 			name := netplay.buf_to_name(g.name[:])
@@ -1170,10 +1228,10 @@ draw_browse_games :: proc(app: ^App, sw, sh: i32) {
 			color := i == app.browse_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT
 			prefix := i == app.browse_sel ? "> " : "  "
 			render.text_center(strings.clone(fmt.tprintf("%s%s", prefix, line), context.temp_allocator),
-				sw / 2, start_y + i32(i) * 44, 28, color)
+				sw / 2, BROWSE_Y0 + i32(i) * BROWSE_DY, 28, color)
 		}
 	}
-	render.text_center("Up/Down select   Enter join   R refresh   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
+	render.text_center("Up/Down or mouse   Enter/click join   R refresh   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
 time_limit_name :: proc(t: game.TimeLimit) -> string {

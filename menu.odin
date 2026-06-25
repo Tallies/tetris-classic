@@ -52,9 +52,15 @@ row_hovered :: proc(i: int, y0, dy: i32) -> bool {
 // Mouse hover/click for a `draw_menu_list`. Returns the hovered row (-1 if none)
 // and whether it was left-clicked this frame.
 mouse_menu_pick :: proc(count: int) -> (hovered: int, clicked: bool) {
+	return mouse_rows_pick(count, MENU_LIST_Y0, MENU_LIST_DY)
+}
+
+// Generic hover/click for a vertical list of `count` rows starting at `y0` with
+// spacing `dy`. Returns hovered row (-1 if none) and whether left-clicked.
+mouse_rows_pick :: proc(count: int, y0, dy: i32) -> (hovered: int, clicked: bool) {
 	hovered = -1
 	for i in 0 ..< count {
-		if row_hovered(i, MENU_LIST_Y0, MENU_LIST_DY) {
+		if row_hovered(i, y0, dy) {
 			hovered = i
 			break
 		}
