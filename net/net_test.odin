@@ -3,6 +3,24 @@ package netplay
 import "core:testing"
 import "core:time"
 
+// The async dialer completes off the main thread; a refused connection resolves
+// quickly to a nil result without blocking the caller.
+@(test)
+test_async_dial_refused :: proc(t: ^testing.T) {
+	d := dial_start("127.0.0.1", 1, false) // nothing listens on port 1 -> refused
+	done := false
+	for _ in 0 ..< 500 {
+		if dial_done(d) {
+			done = true
+			break
+		}
+		time.sleep(time.Millisecond)
+	}
+	testing.expect(t, done, "async dial finishes")
+	n := dial_take(d)
+	testing.expect(t, n == nil, "refused connection yields no Net")
+}
+
 // End-to-end localhost test: host accepts a client, then a snapshot and a
 // garbage message round-trip across the socket and decode correctly.
 @(test)

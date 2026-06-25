@@ -56,6 +56,11 @@ App :: struct {
 	net:            ^netplay.Net,
 	is_host:        bool,
 	seed:           u64,
+
+	// async connect (so the UI stays responsive while dialing)
+	dial:           ^netplay.Dial,
+	dial_cancelled: bool,
+	dial_action:    DialAction,
 	addr_buf:       [64]u8, // LAN join address
 	addr_len:       int,
 	lobby_status:   string,
@@ -118,6 +123,7 @@ run :: proc() {
 
 		handle_audio_hotkeys(&app)
 		audio.update()
+		poll_connect(&app)
 
 		rl.BeginDrawing()
 		switch app.screen {
@@ -301,16 +307,8 @@ update_net_join :: proc(app: ^App) {
 }
 
 start_join :: proc(app: ^App) {
-	addr := string(app.addr_buf[:app.addr_len])
-	app.lobby_status = fmt.aprintf("Connecting to %s...", addr)
-	app.screen = .Lobby
-	n, ok := netplay.join(addr, netplay.DEFAULT_PORT)
-	if !ok {
-		app.lobby_status = "Connection failed"
-		return
-	}
-	app.net = n
-	app.is_host = false
+	host, port := parse_host_port(string(app.addr_buf[:app.addr_len]))
+	start_connect(app, host, port, false, .LanJoin)
 }
 
 // --- Online (matchmaking server) ---
@@ -387,23 +385,15 @@ update_create_game :: proc(app: ^App) {
 }
 
 submit_create :: proc(app: ^App) {
-	if !connect_server(app) do return
-	netplay.send_create(
-		app.net,
-		string(app.name_buf[:app.name_len]),
-		string(app.pass_buf[:app.pass_len]),
-		app.create_public,
-	)
-	app.lobby_status = "Creating game - waiting for opponent..."
-	app.screen = .Lobby
+	host, port := parse_host_port(string(app.server_addr_buf[:app.server_addr_len]))
+	start_connect(app, host, port, true, .Create)
 }
 
 start_browse :: proc(app: ^App) {
-	if !connect_server(app) do return
 	app.browse_count = 0
 	app.browse_sel = 0
-	netplay.send_list(app.net)
-	app.screen = .BrowseGames
+	host, port := parse_host_port(string(app.server_addr_buf[:app.server_addr_len]))
+	start_connect(app, host, port, true, .Browse)
 }
 
 update_browse_games :: proc(app: ^App) {
@@ -453,16 +443,54 @@ submit_join :: proc(app: ^App, password: string) {
 }
 
 // Dial the matchmaking server, storing the connection on the app.
-connect_server :: proc(app: ^App) -> bool {
-	host, port := parse_host_port(string(app.server_addr_buf[:app.server_addr_len]))
-	n, ok := netplay.connect_server(host, port)
-	if !ok {
-		app.lobby_status = fmt.aprintf("Could not reach server %s:%d", host, port)
-		app.screen = .Lobby
-		return false
+// What to do once an async connect succeeds.
+DialAction :: enum {
+	Create,  // online: create a game
+	Browse,  // online: request the game list
+	LanJoin, // direct LAN: just wait for the host to start
+}
+
+// Begin connecting in the background and show the lobby with a status. The UI
+// stays responsive while dialing; the result is handled by poll_connect.
+start_connect :: proc(app: ^App, host: string, port: int, lobby: bool, action: DialAction) {
+	if app.dial != nil do return // a connect is already in flight
+	app.dial = netplay.dial_start(host, port, lobby)
+	app.dial_cancelled = false
+	app.dial_action = action
+	app.lobby_status = fmt.aprintf("Connecting to %s:%d ...", host, port)
+	app.screen = .Lobby
+}
+
+// Poll an in-flight async connect; called every frame from the main loop.
+poll_connect :: proc(app: ^App) {
+	if app.dial == nil || !netplay.dial_done(app.dial) do return
+	n := netplay.dial_take(app.dial)
+	app.dial = nil
+
+	if app.dial_cancelled {
+		if n != nil do netplay.shutdown(n) // user backed out while dialing
+		return
 	}
+	if n == nil {
+		app.lobby_status = "Connection failed"
+		return
+	}
+
 	app.net = n
-	return true
+	switch app.dial_action {
+	case .Create:
+		netplay.send_create(n,
+			string(app.name_buf[:app.name_len]),
+			string(app.pass_buf[:app.pass_len]),
+			app.create_public)
+		app.lobby_status = "Creating game - waiting for opponent..."
+	case .Browse:
+		netplay.send_list(n)
+		app.screen = .BrowseGames
+	case .LanJoin:
+		app.is_host = false
+		app.lobby_status = "Connected - waiting for host..."
+	}
 }
 
 // Split "host" or "host:port" into a host and port (default 7777). Lets players
@@ -482,7 +510,13 @@ parse_host_port :: proc(s: string) -> (host: string, port: int) {
 
 update_lobby :: proc(app: ^App) {
 	if rl.IsKeyPressed(.ESCAPE) {
-		leave_game(app)
+		if app.dial != nil {
+			// Still dialing: mark cancelled; poll_connect cleans up the
+			// background connect when it eventually finishes.
+			app.dial_cancelled = true
+		} else {
+			leave_game(app)
+		}
 		app.screen = .MainMenu
 		return
 	}
@@ -919,7 +953,7 @@ draw_net_join :: proc(app: ^App, sw, sh: i32) {
 	bx := sw / 2 - box_w / 2
 	rl.DrawRectangleRec({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, {0, 0, 0, 140})
 	rl.DrawRectangleLinesEx({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, 2, render.COLOR_BORDER)
-	render.text(strings.clone(addr, context.temp_allocator), bx + 16, sh / 2 - 14, 28, render.COLOR_TEXT)
+	render.text_field(addr, bx + 16, sh / 2 - 14, box_w - 32, 28, render.COLOR_TEXT)
 
 	render.text_center(fmt.tprintf("Port %d", netplay.DEFAULT_PORT), sw / 2, sh / 2 + 60, 20, render.COLOR_TEXT_DIM)
 	render.text_center("Enter to connect   Esc back", sw / 2, sh - 60, 20, render.COLOR_TEXT_DIM)
@@ -971,7 +1005,7 @@ draw_text_entry :: proc(app: ^App, sw, sh: i32, title, prompt: string, value: st
 	bx := sw / 2 - box_w / 2
 	rl.DrawRectangleRec({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, {0, 0, 0, 140})
 	rl.DrawRectangleLinesEx({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, 2, render.COLOR_BORDER)
-	render.text(strings.clone(shown, context.temp_allocator), bx + 16, sh / 2 - 14, 28, render.COLOR_TEXT)
+	render.text_field(shown, bx + 16, sh / 2 - 14, box_w - 32, 28, render.COLOR_TEXT)
 
 	render.text_center(hint, sw / 2, sh - 60, 20, render.COLOR_TEXT_DIM)
 }

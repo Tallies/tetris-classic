@@ -146,3 +146,18 @@ text_center :: proc(str: string, cx, y: i32, size: i32, color: rl.Color) {
 	w := rl.MeasureText(c, size)
 	rl.DrawText(c, cx - w / 2, y, size, color)
 }
+
+// Draw one line of text confined to `max_w` pixels starting at (x, y). If the
+// text is wider, it scrolls left so the end stays visible, and the overflow is
+// clipped — single-line text-field behavior for entry boxes.
+text_field :: proc(str: string, x, y, max_w, size: i32, color: rl.Color) {
+	c := fmt.ctprintf("%s", str)
+	tw := rl.MeasureText(c, size)
+	rl.BeginScissorMode(x, y - 4, max_w, size + 8)
+	dx := x
+	if tw > max_w {
+		dx = x - (tw - max_w)
+	}
+	rl.DrawText(c, dx, y, size, color)
+	rl.EndScissorMode()
+}
