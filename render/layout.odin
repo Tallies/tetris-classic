@@ -189,13 +189,29 @@ draw_hud_panel :: proc(s: ^game.Session, idx: int, x, y, w: i32, name: string, s
 	rl.DrawText(fmt.ctprintf("%d", p.level), x + pad, cy, 26, COLOR_TEXT)
 	rl.DrawText(fmt.ctprintf("%d", p.lines), x + w/2, cy, 26, COLOR_TEXT); cy += line_h + 10
 
-	// Next preview.
-	if show_next && !s.next_disabled {
-		rl.DrawText(fmt.ctprintf("NEXT"), x + pad, cy, 18, COLOR_TEXT_DIM); cy += 24
-		box_y := f32(cy)
+	// Current + Next previews, side by side. Current is always shown (the piece
+	// is already on the board, so it gives nothing away); Next is hidden when the
+	// Next-off scoring option is on.
+	if show_next {
+		show_next_box := !s.next_disabled
+		half := (f32(w) - f32(pad) * 3) / 2
 		box_h := f32(90)
-		rl.DrawRectangleRec({f32(x + pad), box_y, f32(w) - f32(pad) * 2, box_h}, {0, 0, 0, 120})
-		draw_next_preview(p.next, f32(x + pad), box_y, f32(w) - f32(pad) * 2, box_h)
+		left := f32(x + pad)
+		right := left + half + f32(pad)
+
+		rl.DrawText(fmt.ctprintf("CURRENT"), i32(left), cy, 18, COLOR_TEXT_DIM)
+		if show_next_box do rl.DrawText(fmt.ctprintf("NEXT"), i32(right), cy, 18, COLOR_TEXT_DIM)
+		cy += 24
+		box_y := f32(cy)
+
+		cur := p.has_piece ? p.current.kind : game.PieceKind.None
+		rl.DrawRectangleRec({left, box_y, half, box_h}, {0, 0, 0, 120})
+		draw_next_preview(cur, left, box_y, half, box_h)
+
+		if show_next_box {
+			rl.DrawRectangleRec({right, box_y, half, box_h}, {0, 0, 0, 120})
+			draw_next_preview(p.next, right, box_y, half, box_h)
+		}
 	}
 
 	// Timer (campaign only, shown under player 0).
