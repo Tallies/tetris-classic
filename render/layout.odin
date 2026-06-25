@@ -134,7 +134,9 @@ draw_shared_layout :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string) {
 // --- Two separate pits side by side (dual pit / head-to-head). ---
 draw_dual_layout :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string) {
 	margin := f32(30)
-	hud_w := f32(180)
+	// Wide enough for the side-by-side Current/Next boxes; the pits are usually
+	// height-limited so this doesn't shrink them.
+	hud_w := f32(240)
 	// Each half holds a pit + a HUD column.
 	half_w := (f32(sw) - margin * 3) / 2
 	avail_h := f32(sh) - margin * 2
