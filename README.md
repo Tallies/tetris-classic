@@ -77,8 +77,12 @@ restrict it to a single scheme.
 - **Right player:** Arrow keys **or** `J`/`I`/`K`/`L` (+`U` for CCW) — both work,
   handy when a laptop's arrow keys are cramped.
 
-`Esc` or `P` open the pause menu (Continue / Exit to Menu) · `Enter` confirm /
-return after game over.
+**Mouse** (controls player 1): move the mouse left/right to slide the piece to
+that column, **right-click** to rotate, **left-click** to hard drop. Keyboard
+still works when the mouse is idle. Menus are mouse-clickable too.
+
+`Esc` or `P` open the pause menu (Continue / **Restart** in solo & local modes /
+Exit to Menu) · `Enter` confirm / return after game over.
 `M` toggle music · `N` toggle sound effects.
 
 ## Single-player extras

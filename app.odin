@@ -157,7 +157,13 @@ update_main_menu :: proc(app: ^App) {
 	count := len(game.GameMode) + 1 // modes + Quit
 	app.main_sel = menu_navigate(app.main_sel, count)
 
-	if rl.IsKeyPressed(.ENTER) {
+	activate := rl.IsKeyPressed(.ENTER)
+	if h, clicked := mouse_menu_pick(count); h >= 0 {
+		app.main_sel = h
+		if clicked do activate = true
+	}
+
+	if activate {
 		if app.main_sel == count - 1 {
 			rl.CloseWindow() // Quit handled by WindowShouldClose next frame
 			return
@@ -234,13 +240,17 @@ cycle_time_limit :: proc(app: ^App, right: bool) {
 	app.time_limit = game.TimeLimit(v)
 }
 
-start_local_game :: proc(app: ^App) {
+init_local_session :: proc(app: ^App) {
 	app.seed = make_seed()
 	game.session_init(&app.session, app.mode, app.scoring, app.time_limit, app.seed)
 	app.session.next_disabled = app.next_disabled
 	app.session.ghost_disabled = app.ghost_disabled
 	app.new_high_score = false
 	reset_audio_tracking(app)
+}
+
+start_local_game :: proc(app: ^App) {
+	init_local_session(app)
 	app.screen = .Playing
 }
 
@@ -250,7 +260,12 @@ start_local_game :: proc(app: ^App) {
 update_net_menu :: proc(app: ^App) {
 	app.netmenu_sel = menu_navigate(app.netmenu_sel, 3) // Direct / Online / Back
 
-	if rl.IsKeyPressed(.ENTER) {
+	activate := rl.IsKeyPressed(.ENTER)
+	if h, clicked := mouse_menu_pick(3); h >= 0 {
+		app.netmenu_sel = h
+		if clicked do activate = true
+	}
+	if activate {
 		switch app.netmenu_sel {
 		case 0: app.screen = .LanMenu; app.lan_sel = 0
 		case 1:
@@ -271,7 +286,12 @@ update_net_menu :: proc(app: ^App) {
 update_lan_menu :: proc(app: ^App) {
 	app.lan_sel = menu_navigate(app.lan_sel, 3) // Host / Join / Back
 
-	if rl.IsKeyPressed(.ENTER) {
+	activate := rl.IsKeyPressed(.ENTER)
+	if h, clicked := mouse_menu_pick(3); h >= 0 {
+		app.lan_sel = h
+		if clicked do activate = true
+	}
+	if activate {
 		switch app.lan_sel {
 		case 0: start_host(app)
 		case 1: app.screen = .NetJoin; app.addr_len = 0
@@ -332,7 +352,12 @@ update_server_setup :: proc(app: ^App) {
 update_server_menu :: proc(app: ^App) {
 	app.server_sel = menu_navigate(app.server_sel, 4) // Create / Browse / Options / Back
 
-	if rl.IsKeyPressed(.ENTER) {
+	activate := rl.IsKeyPressed(.ENTER)
+	if h, clicked := mouse_menu_pick(4); h >= 0 {
+		app.server_sel = h
+		if clicked do activate = true
+	}
+	if activate {
 		switch app.server_sel {
 		case 0:
 			app.screen = .CreateGame
@@ -645,8 +670,7 @@ update_playing :: proc(app: ^App, dt: f32) {
 	active := s.state == .Playing && !s.paused
 
 	if app.mode == .HeadToHead {
-		if active do sfx_for_intent(gather_solo(app.solo_controls, app.down_mode))
-		update_head_to_head(app, dt)
+		update_head_to_head(app, dt, active)
 		audio_post(app)
 		return
 	}
@@ -661,6 +685,7 @@ update_playing :: proc(app: ^App, dt: f32) {
 		intents[1] = gather_right(app.down_mode) // right side
 	}
 	if active {
+		apply_mouse_gameplay(&intents[0]) // mouse controls player 0
 		sfx_for_intent(intents[0])
 		if s.num_players > 1 do sfx_for_intent(intents[1])
 	}
@@ -668,20 +693,85 @@ update_playing :: proc(app: ^App, dt: f32) {
 	audio_post(app)
 }
 
+// Overlay mouse control onto player 0's intent: horizontal mouse movement snaps
+// the piece to the column under the cursor, right-click rotates, left-click
+// hard-drops. Keyboard still works when the mouse is idle.
+apply_mouse_gameplay :: proc(intent: ^game.PlayerIntent) {
+	pit := render.player0_pit
+	if pit.valid && abs(rl.GetMouseDelta().x) > 0 {
+		col := int((rl.GetMousePosition().x - pit.ox) / pit.cell)
+		intent.use_target = true
+		intent.target_x = col - 1 // roughly centre the 4-wide piece box
+	}
+	if rl.IsMouseButtonPressed(.RIGHT) do intent.rotate_cw = true
+	if rl.IsMouseButtonPressed(.LEFT)  do intent.hard_drop = true
+}
+
 // Pause menu: Continue or Exit to Menu. Esc resumes.
+PauseOption :: enum {
+	Continue,
+	Restart,
+	ExitToMenu,
+}
+
+// Restart only makes sense for local games; a networked match can't be restarted
+// unilaterally.
+PAUSE_LOCAL := [?]PauseOption{.Continue, .Restart, .ExitToMenu}
+PAUSE_NET   := [?]PauseOption{.Continue, .ExitToMenu}
+
+pause_options :: proc(mode: game.GameMode) -> []PauseOption {
+	return mode == .HeadToHead ? PAUSE_NET[:] : PAUSE_LOCAL[:]
+}
+
+pause_label :: proc(o: PauseOption) -> string {
+	switch o {
+	case .Continue:   return "Continue"
+	case .Restart:    return "Restart"
+	case .ExitToMenu: return "Exit to Menu"
+	}
+	return ""
+}
+
 update_pause_menu :: proc(app: ^App) {
-	app.paused_sel = menu_navigate(app.paused_sel, 2)
+	opts := pause_options(app.mode)
+	app.paused_sel = menu_navigate(app.paused_sel, len(opts))
+	mouse_select_pause(app, len(opts))
 
 	if rl.IsKeyPressed(.ESCAPE) {
 		app.session.paused = false // Esc = continue
 		return
 	}
 	if rl.IsKeyPressed(.ENTER) {
-		switch app.paused_sel {
-		case 0: app.session.paused = false // Continue
-		case 1: leave_game(app)            // Exit to Menu
+		pause_select(app, opts[app.paused_sel])
+	}
+}
+
+mouse_select_pause :: proc(app: ^App, count: int) {
+	sh := rl.GetScreenHeight()
+	for i in 0 ..< count {
+		if row_hovered(i, render.PAUSE_OPTION_Y0(sh), render.PAUSE_OPTION_DY) {
+			app.paused_sel = i
+			if rl.IsMouseButtonPressed(.LEFT) {
+				pause_select(app, pause_options(app.mode)[i])
+			}
+			return
 		}
 	}
+}
+
+pause_select :: proc(app: ^App, o: PauseOption) {
+	switch o {
+	case .Continue:   app.session.paused = false
+	case .Restart:    restart_game(app)
+	case .ExitToMenu: leave_game(app)
+	}
+}
+
+// Re-initialise the current local session with a fresh seed and resume.
+restart_game :: proc(app: ^App) {
+	init_local_session(app)
+	app.session.paused = false
+	app.screen = .Playing
 }
 
 // Play input-driven sound effects (rotate / hard drop).
@@ -743,12 +833,16 @@ reset_audio_tracking :: proc(app: ^App) {
 	app.prev_game_over = false
 }
 
-update_head_to_head :: proc(app: ^App, dt: f32) {
+update_head_to_head :: proc(app: ^App, dt: f32, active: bool) {
 	s := &app.session
 	n := app.net
 
 	intents: [2]game.PlayerIntent
 	intents[0] = gather_solo(app.solo_controls, app.down_mode)
+	if active {
+		apply_mouse_gameplay(&intents[0])
+		sfx_for_intent(intents[0])
+	}
 	game.session_update(s, dt, intents)
 
 	if n == nil do return
@@ -924,7 +1018,10 @@ draw_screen :: proc(app: ^App, sw, sh: i32) {
 		p2 := app.mode == .HeadToHead ? "OPPONENT" : "PLAYER 2"
 		render.draw_session(&app.session, sw, sh, p1, p2, app.high_score, app.new_high_score)
 		if app.session.paused {
-			render.draw_pause_menu(sw, sh, app.paused_sel)
+			opts := pause_options(app.mode)
+			labels := make([]string, len(opts), context.temp_allocator)
+			for o, i in opts do labels[i] = pause_label(o)
+			render.draw_pause_menu(sw, sh, labels, app.paused_sel)
 		}
 	}
 }

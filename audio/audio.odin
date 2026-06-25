@@ -51,7 +51,8 @@ State :: struct {
 	buf:    [BUFFER_FRAMES]i16,
 
 	voices:     []Voice,
-	play_beats: f32, // global playhead in beats
+	play_beats: f32, // global playhead in beats (kept wrapped to song_beats)
+	song_beats: f32, // loop length; wrapping keeps play_beats small for f32 precision
 	bpm:        f32,
 	rng:        u64,
 
@@ -77,6 +78,9 @@ init :: proc() {
 	rl.SetAudioStreamVolume(s.stream, 0.5)
 
 	s.voices = make_song()
+	s.song_beats = 0
+	for v in s.voices do s.song_beats = max(s.song_beats, v.total)
+	if s.song_beats <= 0 do s.song_beats = 32
 	build_sfx()
 
 	rl.PlayAudioStream(s.stream)
@@ -209,7 +213,13 @@ fill_buffer :: proc() {
 
 		mix = clamp(mix, -1, 1)
 		s.buf[i] = i16(mix * 30000)
+
+		// Keep the playhead small so the f32 increment never rounds to zero
+		// (which previously froze the music after a few minutes).
 		s.play_beats += dbeat
+		if s.play_beats >= s.song_beats {
+			s.play_beats -= s.song_beats
+		}
 	}
 
 	rl.UpdateAudioStream(s.stream, &s.buf[0], BUFFER_FRAMES)

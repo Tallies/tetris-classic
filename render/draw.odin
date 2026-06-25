@@ -35,9 +35,9 @@ draw_block_rgb :: proc(px, py, size: f32, base: rl.Color) {
 // Ghost outline at a cell.
 draw_ghost_cell :: proc(px, py, size: f32, ci: game.Cell) {
 	base := BLOCK_COLORS[ci]
-	base.a = 60
+	base.a = 28 // faint fill so it's a hint, not a distraction
 	rl.DrawRectangleRec({px, py, size, size}, base)
-	rl.DrawRectangleLinesEx({px, py, size, size}, 1, {base.r, base.g, base.b, 140})
+	rl.DrawRectangleLinesEx({px, py, size, size}, 1, {base.r, base.g, base.b, 70})
 }
 
 // Draw a board's pit (background, grid, settled cells, frame) with the visible

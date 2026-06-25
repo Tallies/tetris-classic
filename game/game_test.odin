@@ -103,6 +103,24 @@ test_seven_bag :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_mouse_target_moves_piece :: proc(t: ^testing.T) {
+	// Mouse control: setting use_target snaps the piece toward the target column.
+	s: Session
+	session_init(&s, .Campaign, .TetrisClassic, .Unlimited, 42)
+	start_x := s.players[0].current.x
+
+	intents: [2]PlayerIntent
+	intents[0] = PlayerIntent{use_target = true, target_x = 0} // far left
+	session_update(&s, 0.016, intents)
+	testing.expect(t, s.players[0].current.x < start_x, "piece snapped left toward target")
+	testing.expect_value(t, s.players[0].current.x, 0)
+
+	intents[0] = PlayerIntent{use_target = true, target_x = PIT_WIDTH} // far right (clamps at wall)
+	session_update(&s, 0.016, intents)
+	testing.expect(t, s.players[0].current.x > 0, "piece snapped right toward target")
+}
+
+@(test)
 test_scoring_levels :: proc(t: ^testing.T) {
 	p: Player
 	p.level = 1

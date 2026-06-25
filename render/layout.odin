@@ -30,18 +30,21 @@ draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string, hi
 }
 
 // Pause overlay menu drawn over the frozen game.
-draw_pause_menu :: proc(sw, sh: i32, selected: int) {
+// Y position of pause-menu option `i` (kept in sync with mouse hit-testing).
+PAUSE_OPTION_Y0 :: proc(sh: i32) -> i32 { return sh / 2 }
+PAUSE_OPTION_DY :: 48
+
+draw_pause_menu :: proc(sw, sh: i32, options: []string, selected: int) {
 	rl.DrawRectangleRec({0, 0, f32(sw), f32(sh)}, {0, 0, 0, 175})
 	text_center("PAUSED", sw / 2, sh / 2 - 90, 52, COLOR_HIGHLIGHT)
 
-	options := []string{"Continue", "Exit to Menu"}
 	for opt, i in options {
-		y := sh / 2 + i32(i) * 48
+		y := PAUSE_OPTION_Y0(sh) + i32(i) * PAUSE_OPTION_DY
 		color := i == selected ? COLOR_HIGHLIGHT : COLOR_TEXT_DIM
 		prefix := i == selected ? "> " : "   "
 		text_center(fmt.tprintf("%s%s", prefix, opt), sw / 2, y, 30, color)
 	}
-	text_center("Up/Down select   Enter confirm   Esc continue", sw / 2, sh - 60, 18, COLOR_TEXT_DIM)
+	text_center("Up/Down or mouse   Enter/click   Esc continue", sw / 2, sh - 60, 18, COLOR_TEXT_DIM)
 }
 
 // The level used to pick the background: the highest level among active players
@@ -55,6 +58,15 @@ representative_level :: proc(s: ^game.Session) -> int {
 	}
 	return lvl
 }
+
+// Geometry of player 0's pit from the last draw, so the app can map the mouse
+// position to a board column for mouse gameplay.
+PitView :: struct {
+	ox, oy, cell: f32,
+	cols, rows:   int,
+	valid:        bool,
+}
+player0_pit: PitView
 
 // Compute a cell size so a pit of `cols` x `rows` plus margins fits in the area.
 fit_cell :: proc(area_w, area_h: f32, cols, rows: int) -> f32 {
@@ -80,6 +92,7 @@ draw_single_layout :: proc(s: ^game.Session, idx: int, sw, sh: i32, name: string
 
 	draw_board(b, ox, oy, cell)
 	draw_player_piece(s, idx, ox, oy, cell)
+	player0_pit = {ox, oy, cell, b.width, b.height, true}
 
 	hud_x := ox + pit_w + margin
 	panel_h := draw_hud_panel(s, idx, i32(hud_x), i32(oy), i32(hud_w), name, true, high_score)
@@ -102,6 +115,7 @@ draw_shared_layout :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string) {
 	oy := (f32(sh) - pit_h) / 2
 
 	draw_board(b, ox, oy, cell)
+	player0_pit = {ox, oy, cell, b.width, b.height, true}
 	// Player 0 first so player 1 (right) ghost layers cleanly.
 	draw_player_piece(s, 0, ox, oy, cell)
 	draw_player_piece(s, 1, ox, oy, cell)
@@ -135,6 +149,7 @@ draw_dual_layout :: proc(s: ^game.Session, sw, sh: i32, n1, n2: string) {
 		oy := (sh - pit_h) / 2
 		draw_board(b, ox, oy, cell)
 		draw_player_piece(s, idx, ox, oy, cell)
+		if idx == 0 do player0_pit = {ox, oy, cell, b.width, b.height, true}
 		draw_hud_panel(s, idx, i32(ox + pit_w + 16), i32(oy), i32(hud_w), name, true)
 	}
 

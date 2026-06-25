@@ -29,6 +29,11 @@ PlayerIntent :: struct {
 	rotate_cw:  bool,
 	rotate_ccw: bool,
 	hard_drop:  bool,
+
+	// Mouse control: snap the piece's bounding box toward this left-edge column
+	// this frame (overrides move_left/right). Set use_target to engage it.
+	use_target: bool,
+	target_x:   int,
 }
 
 Session :: struct {
@@ -170,24 +175,36 @@ step_player :: proc(s: ^Session, idx: int, intent: PlayerIntent, dt: f32) -> int
 	if intent.rotate_cw  do try_rotate(b, p, true, others)
 	if intent.rotate_ccw do try_rotate(b, p, false, others)
 
-	// Horizontal movement with DAS.
-	dir := 0
-	if intent.move_left  do dir -= 1
-	if intent.move_right do dir += 1
-	if dir != 0 && dir != s.das_dir[idx] {
-		// New press: move once immediately, then arm the initial delay.
-		try_move(b, p, dir, 0, others)
-		s.das_dir[idx] = dir
-		s.das_timer[idx] = DAS_DELAY
-	} else if dir != 0 && dir == s.das_dir[idx] {
-		s.das_timer[idx] -= dt
-		for s.das_timer[idx] <= 0 {
-			if !try_move(b, p, dir, 0, others) do break
-			s.das_timer[idx] += DAS_REPEAT
+	if intent.use_target {
+		// Mouse: snap the piece's bounding box toward the target column.
+		for p.current.x < intent.target_x {
+			if !try_move(b, p, 1, 0, others) do break
 		}
-	} else {
+		for p.current.x > intent.target_x {
+			if !try_move(b, p, -1, 0, others) do break
+		}
 		s.das_dir[idx] = 0
 		s.das_timer[idx] = 0
+	} else {
+		// Keyboard horizontal movement with DAS.
+		dir := 0
+		if intent.move_left  do dir -= 1
+		if intent.move_right do dir += 1
+		if dir != 0 && dir != s.das_dir[idx] {
+			// New press: move once immediately, then arm the initial delay.
+			try_move(b, p, dir, 0, others)
+			s.das_dir[idx] = dir
+			s.das_timer[idx] = DAS_DELAY
+		} else if dir != 0 && dir == s.das_dir[idx] {
+			s.das_timer[idx] -= dt
+			for s.das_timer[idx] <= 0 {
+				if !try_move(b, p, dir, 0, others) do break
+				s.das_timer[idx] += DAS_REPEAT
+			}
+		} else {
+			s.das_dir[idx] = 0
+			s.das_timer[idx] = 0
+		}
 	}
 
 	// Hard drop (edge-triggered) preempts gravity this frame.

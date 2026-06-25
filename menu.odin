@@ -7,6 +7,9 @@ import "render"
 // Simple keyboard-driven menus. Drawing lives here; navigation state lives on
 // the App. All menus share a vertical-list look.
 
+MENU_LIST_Y0 :: i32(260) // first row top
+MENU_LIST_DY :: i32(50)  // row spacing
+
 // Draw a titled vertical list, highlighting `selected`. `subtitle` is optional.
 draw_menu_list :: proc(title, subtitle: string, items: []string, selected: int, sw, sh: i32) {
 	rl.DrawRectangleGradientV(0, 0, sw, sh, {20, 22, 48, 255}, {6, 6, 16, 255})
@@ -17,9 +20,8 @@ draw_menu_list :: proc(title, subtitle: string, items: []string, selected: int, 
 		render.text_center(subtitle, sw / 2, 190, 20, render.COLOR_TEXT_DIM)
 	}
 
-	start_y := i32(260)
 	for item, i in items {
-		y := start_y + i32(i) * 50
+		y := MENU_LIST_Y0 + i32(i) * MENU_LIST_DY
 		color := render.COLOR_TEXT_DIM
 		prefix := "   "
 		if i == selected {
@@ -29,13 +31,34 @@ draw_menu_list :: proc(title, subtitle: string, items: []string, selected: int, 
 		render.text_center(fmt.tprintf("%s%s", prefix, item), sw / 2, y, 28, color)
 	}
 
-	render.text_center("Up/Down select   Enter confirm   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
+	render.text_center("Up/Down or mouse   Enter/click   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
-// Menu navigation helper: returns the new selection index given key presses.
+// Keyboard navigation helper: new selection index given Up/Down presses.
 menu_navigate :: proc(selected, count: int) -> int {
 	s := selected
 	if rl.IsKeyPressed(.DOWN) do s = (s + 1) % count
 	if rl.IsKeyPressed(.UP)   do s = (s - 1 + count) % count
 	return s
+}
+
+// True if the mouse is over the vertical band of row `i` (rows at y0 + i*dy).
+row_hovered :: proc(i: int, y0, dy: i32) -> bool {
+	my := rl.GetMousePosition().y
+	top := f32(y0 + i32(i) * dy)
+	return my >= top - 10 && my <= top + 38
+}
+
+// Mouse hover/click for a `draw_menu_list`. Returns the hovered row (-1 if none)
+// and whether it was left-clicked this frame.
+mouse_menu_pick :: proc(count: int) -> (hovered: int, clicked: bool) {
+	hovered = -1
+	for i in 0 ..< count {
+		if row_hovered(i, MENU_LIST_Y0, MENU_LIST_DY) {
+			hovered = i
+			break
+		}
+	}
+	clicked = hovered >= 0 && rl.IsMouseButtonPressed(.LEFT)
+	return
 }
