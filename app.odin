@@ -724,10 +724,10 @@ update_playing :: proc(app: ^App, dt: f32) {
 		return
 	}
 
-	active := s.state == .Playing && !s.paused
-
+	// Reaching here implies state == .Playing and !paused (the guards above
+	// early-return otherwise), so gameplay input always applies.
 	if app.mode == .HeadToHead {
-		update_head_to_head(app, dt, active)
+		update_head_to_head(app, dt)
 		audio_post(app)
 		return
 	}
@@ -741,11 +741,9 @@ update_playing :: proc(app: ^App, dt: f32) {
 		intents[0] = gather_awsd(app.down_mode)  // left side
 		intents[1] = gather_right(app.down_mode) // right side
 	}
-	if active {
-		apply_mouse_gameplay(&intents[0], app.down_mode) // mouse controls player 0
-		sfx_for_intent(intents[0])
-		if s.num_players > 1 do sfx_for_intent(intents[1])
-	}
+	apply_mouse_gameplay(&intents[0], app.down_mode) // mouse controls player 0
+	sfx_for_intent(intents[0])
+	if s.num_players > 1 do sfx_for_intent(intents[1])
 	game.session_update(s, dt, intents)
 	audio_post(app)
 }
@@ -899,16 +897,14 @@ reset_audio_tracking :: proc(app: ^App) {
 	app.prev_game_over = false
 }
 
-update_head_to_head :: proc(app: ^App, dt: f32, active: bool) {
+update_head_to_head :: proc(app: ^App, dt: f32) {
 	s := &app.session
 	n := app.net
 
 	intents: [2]game.PlayerIntent
 	intents[0] = gather_solo(app.solo_controls, app.down_mode)
-	if active {
-		apply_mouse_gameplay(&intents[0], app.down_mode)
-		sfx_for_intent(intents[0])
-	}
+	apply_mouse_gameplay(&intents[0], app.down_mode)
+	sfx_for_intent(intents[0])
 	game.session_update(s, dt, intents)
 
 	if n == nil do return
