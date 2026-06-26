@@ -191,7 +191,7 @@ SetupField :: enum {
 SETUP_CAMPAIGN := [?]SetupField{.Scoring, .TimeLimit, .Next, .Down, .Ghost, .Controls, .Start}
 SETUP_LOCAL    := [?]SetupField{.Scoring, .TimeLimit, .Next, .Down, .Ghost, .Start}
 SETUP_OFFSET_FROM_Y0 :: i32(230)
-SETUP_DELTA_FROM_Y :: i32(52)
+SETUP_ROW_SPACING :: i32(52)
 
 setup_fields :: proc(mode: game.GameMode) -> []SetupField {
 	return mode == .Campaign ? SETUP_CAMPAIGN[:] : SETUP_LOCAL[:]
@@ -213,7 +213,7 @@ update_setup :: proc(app: ^App) {
 	app.setup_sel = menu_navigate(app.setup_sel, len(fields))
 
 	// Mouse: hover selects a row; click starts (START) or cycles the value.
-	if h, clicked := mouse_rows_pick(len(fields), SETUP_OFFSET_FROM_Y0, SETUP_DELTA_FROM_Y); h >= 0 {
+	if h, clicked := mouse_rows_pick(len(fields), SETUP_OFFSET_FROM_Y0, SETUP_ROW_SPACING); h >= 0 {
 		app.setup_sel = h
 		if clicked {
 			if fields[h] == .Start {
@@ -396,7 +396,7 @@ update_server_menu :: proc(app: ^App) {
 // These edit the same app fields the local Setup screen uses, so they apply
 // everywhere.
 OPTIONS_OFFSET_FROM_Y0 :: i32(280)
-OPTIONS_DELTA_FROM_Y :: i32(56)
+OPTIONS_ROW_SPACING :: i32(56)
 
 cycle_option_field :: proc(app: ^App, i: int) {
 	switch i {
@@ -409,7 +409,7 @@ cycle_option_field :: proc(app: ^App, i: int) {
 update_options :: proc(app: ^App) {
 	app.options_sel = menu_navigate(app.options_sel, 3) // Down / Ghost / Next
 
-	if h, clicked := mouse_rows_pick(3, OPTIONS_OFFSET_FROM_Y0, OPTIONS_DELTA_FROM_Y); h >= 0 {
+	if h, clicked := mouse_rows_pick(3, OPTIONS_OFFSET_FROM_Y0, OPTIONS_ROW_SPACING); h >= 0 {
 		app.options_sel = h
 		if clicked do cycle_option_field(app, h)
 	}
@@ -422,14 +422,14 @@ update_options :: proc(app: ^App) {
 }
 
 CREATE_OFFSET_FROM_Y0 :: i32(240)
-CREATE_DELTA_FROM_Y :: i32(60)
+CREATE_ROW_SPACING :: i32(60)
 
 update_create_game :: proc(app: ^App) {
 	app.create_field = menu_navigate(app.create_field, 4) // name / password / public / CREATE
 
 	// Mouse: hover selects a field; click toggles public, submits CREATE, or just
 	// focuses a text field for typing.
-	if h, clicked := mouse_rows_pick(4, CREATE_OFFSET_FROM_Y0, CREATE_DELTA_FROM_Y); h >= 0 {
+	if h, clicked := mouse_rows_pick(4, CREATE_OFFSET_FROM_Y0, CREATE_ROW_SPACING); h >= 0 {
 		app.create_field = h
 		if clicked {
 			switch h {
@@ -469,7 +469,7 @@ start_browse :: proc(app: ^App) {
 }
 
 BROWSE_OFFSET_FROM_Y0 :: i32(200)
-BROWSE_DELTA_FROM_Y :: i32(44)
+BROWSE_ROW_SPACING :: i32(44)
 
 join_browse :: proc(app: ^App, idx: int) {
 	g := app.browse[idx]
@@ -491,7 +491,7 @@ update_browse_games :: proc(app: ^App) {
 
 	if app.browse_count > 0 {
 		app.browse_sel = menu_navigate(app.browse_sel, app.browse_count)
-		if h, clicked := mouse_rows_pick(app.browse_count, BROWSE_OFFSET_FROM_Y0, BROWSE_DELTA_FROM_Y); h >= 0 {
+		if h, clicked := mouse_rows_pick(app.browse_count, BROWSE_OFFSET_FROM_Y0, BROWSE_ROW_SPACING); h >= 0 {
 			app.browse_sel = h
 			if clicked do join_browse(app, h)
 		}
@@ -811,7 +811,7 @@ update_pause_menu :: proc(app: ^App) {
 mouse_select_pause :: proc(app: ^App, count: int) {
 	sh := rl.GetScreenHeight()
 	for i in 0 ..< count {
-		if row_hovered(i, render.PAUSE_OPTION_OFFSET_FROM_Y0(sh), render.PAUSE_OPTION_DELTA_FROM_Y) {
+		if row_hovered(i, render.PAUSE_OPTION_OFFSET_FROM_Y0(sh), render.PAUSE_OPTION_ROW_SPACING) {
 			app.paused_sel = i
 			if rl.IsMouseButtonPressed(.LEFT) {
 				pause_select(app, pause_options(app.mode)[i])
@@ -1096,10 +1096,10 @@ draw_setup :: proc(app: ^App, sw, sh: i32) {
 	fields := setup_fields(app.mode)
 	labels := make([]string, len(fields), context.temp_allocator)
 	for f, i in fields do labels[i] = setup_field_label(app, f)
-	draw_option_rows(labels, app.setup_sel, SETUP_OFFSET_FROM_Y0, SETUP_DELTA_FROM_Y, sw)
+	draw_option_rows(labels, app.setup_sel, SETUP_OFFSET_FROM_Y0, SETUP_ROW_SPACING, sw)
 
 	if app.mode != .Campaign {
-		render.text_center("Left: A W S D + Shift     Right: Arrows / J I K L", sw / 2, SETUP_OFFSET_FROM_Y0 + i32(len(fields)) * SETUP_DELTA_FROM_Y + 16, 20, render.COLOR_TEXT_DIM)
+		render.text_center("Left: A W S D + Shift     Right: Arrows / J I K L", sw / 2, SETUP_OFFSET_FROM_Y0 + i32(len(fields)) * SETUP_ROW_SPACING + 16, 20, render.COLOR_TEXT_DIM)
 	}
 	render.text_center("Up/Down or mouse   Left/Right or click changes   Enter/click start   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
@@ -1181,7 +1181,7 @@ draw_options :: proc(app: ^App, sw, sh: i32) {
 		fmt.tprintf("Ghost Piece: < %s >", ghost_name(app.ghost_disabled)),
 		fmt.tprintf("Next Piece:  < %s >", next_name(app.next_disabled)),
 	}
-	draw_option_rows(rows, app.options_sel, OPTIONS_OFFSET_FROM_Y0, OPTIONS_DELTA_FROM_Y, sw)
+	draw_option_rows(rows, app.options_sel, OPTIONS_OFFSET_FROM_Y0, OPTIONS_ROW_SPACING, sw)
 	render.text_center("Up/Down or mouse   Left/Right or click changes   Enter/Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
@@ -1199,7 +1199,7 @@ draw_create_game :: proc(app: ^App, sw, sh: i32) {
 		fmt.tprintf("Public:    < %s >", public_val),
 		"CREATE",
 	}
-	draw_option_rows(rows, app.create_field, CREATE_OFFSET_FROM_Y0, CREATE_DELTA_FROM_Y, sw)
+	draw_option_rows(rows, app.create_field, CREATE_OFFSET_FROM_Y0, CREATE_ROW_SPACING, sw)
 	render.text_center("Up/Down or click field   type to edit   click CREATE   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
@@ -1218,7 +1218,7 @@ draw_browse_games :: proc(app: ^App, sw, sh: i32) {
 			color := i == app.browse_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT
 			prefix := i == app.browse_sel ? "> " : "  "
 			render.text_center(strings.clone(fmt.tprintf("%s%s", prefix, line), context.temp_allocator),
-				sw / 2, BROWSE_OFFSET_FROM_Y0 + i32(i) * BROWSE_DELTA_FROM_Y, 28, color)
+				sw / 2, BROWSE_OFFSET_FROM_Y0 + i32(i) * BROWSE_ROW_SPACING, 28, color)
 		}
 	}
 	render.text_center("Up/Down or mouse   Enter/click join   R refresh   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)

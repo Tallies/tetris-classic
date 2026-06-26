@@ -9,7 +9,7 @@ import "render"
 // the App. All menus share a vertical-list look.
 
 MENU_LIST_OFFSET_FROM_Y0 :: i32(260) // first row top
-MENU_LIST_DELTA_FROM_Y :: i32(50)  // row spacing
+MENU_LIST_ROW_SPACING :: i32(50)  // row spacing
 
 // Draw a titled vertical list, highlighting `selected`. `subtitle` is optional.
 draw_menu_list :: proc(title, subtitle: string, items: []string, selected: int, sw, sh: i32) {
@@ -22,7 +22,7 @@ draw_menu_list :: proc(title, subtitle: string, items: []string, selected: int, 
 	}
 
 	for item, i in items {
-		y := MENU_LIST_OFFSET_FROM_Y0 + i32(i) * MENU_LIST_DELTA_FROM_Y
+		y := MENU_LIST_OFFSET_FROM_Y0 + i32(i) * MENU_LIST_ROW_SPACING
 		color := render.COLOR_TEXT_DIM
 		prefix := "   "
 		if i == selected {
@@ -62,7 +62,7 @@ row_hovered :: proc(i: int, y0, dy: i32) -> bool {
 // Mouse hover/click for a `draw_menu_list`. Returns the hovered row (-1 if none)
 // and whether it was left-clicked this frame.
 mouse_menu_pick :: proc(count: int) -> (hovered: int, clicked: bool) {
-	return mouse_rows_pick(count, MENU_LIST_OFFSET_FROM_Y0, MENU_LIST_DELTA_FROM_Y)
+	return mouse_rows_pick(count, MENU_LIST_OFFSET_FROM_Y0, MENU_LIST_ROW_SPACING)
 }
 
 // Generic hover/click for a vertical list of `count` rows starting at `y0` with
