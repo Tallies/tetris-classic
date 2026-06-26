@@ -144,6 +144,10 @@ run :: proc() {
 		draw_screen(&app, sw, sh)
 		draw_audio_hint(sw, sh)
 		rl.EndDrawing()
+
+		// All temp allocations (tprintf/ctprintf strings, label slices) are
+		// frame-scoped; reclaim them so the arena doesn't grow over a session.
+		free_all(context.temp_allocator)
 	}
 
 	if app.net != nil {
