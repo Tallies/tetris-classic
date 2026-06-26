@@ -31,15 +31,15 @@ draw_session :: proc(s: ^game.Session, sw, sh: i32, p1_name, p2_name: string, hi
 
 // Pause overlay menu drawn over the frozen game.
 // Y position of pause-menu option `i` (kept in sync with mouse hit-testing).
-PAUSE_OPTION_Y0 :: proc(sh: i32) -> i32 { return sh / 2 }
-PAUSE_OPTION_DY :: 48
+PAUSE_OPTION_OFFSET_FROM_Y0 :: proc(sh: i32) -> i32 { return sh / 2 }
+PAUSE_OPTION_DELTA_FROM_Y :: 48
 
 draw_pause_menu :: proc(sw, sh: i32, options: []string, selected: int) {
 	rl.DrawRectangleRec({0, 0, f32(sw), f32(sh)}, {0, 0, 0, 175})
 	text_center("PAUSED", sw / 2, sh / 2 - 90, 52, COLOR_HIGHLIGHT)
 
 	for opt, i in options {
-		y := PAUSE_OPTION_Y0(sh) + i32(i) * PAUSE_OPTION_DY
+		y := PAUSE_OPTION_OFFSET_FROM_Y0(sh) + i32(i) * PAUSE_OPTION_DELTA_FROM_Y
 		color := i == selected ? COLOR_HIGHLIGHT : COLOR_TEXT_DIM
 		prefix := i == selected ? "> " : "   "
 		text_center(fmt.tprintf("%s%s", prefix, opt), sw / 2, y, 30, color)
