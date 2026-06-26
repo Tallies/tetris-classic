@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:strings"
 import rl "vendor:raylib"
 import "render"
 
@@ -32,6 +33,15 @@ draw_menu_list :: proc(title, subtitle: string, items: []string, selected: int, 
 	}
 
 	render.text_center("Up/Down or mouse   Enter/click   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
+}
+
+// Draw a vertical list of option rows (Setup / Options / Create), highlighting
+// `selected`. Rows at y0 + i*dy, font 30, centred.
+draw_option_rows :: proc(rows: []string, selected: int, y0, dy, sw: i32) {
+	for r, i in rows {
+		color := i == selected ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
+		render.text_center(strings.clone(r, context.temp_allocator), sw / 2, y0 + i32(i) * dy, 30, color)
+	}
 }
 
 // Keyboard navigation helper: new selection index given Up/Down presses.

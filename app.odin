@@ -1094,11 +1094,9 @@ draw_setup :: proc(app: ^App, sw, sh: i32) {
 	render.text_center(MODE_NAMES[app.mode], sw / 2, 150, 30, render.COLOR_TEXT)
 
 	fields := setup_fields(app.mode)
-	for f, i in fields {
-		y := SETUP_Y0 + i32(i) * SETUP_DY
-		color := i == app.setup_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
-		render.text_center(strings.clone(setup_field_label(app, f), context.temp_allocator), sw / 2, y, 30, color)
-	}
+	labels := make([]string, len(fields), context.temp_allocator)
+	for f, i in fields do labels[i] = setup_field_label(app, f)
+	draw_option_rows(labels, app.setup_sel, SETUP_Y0, SETUP_DY, sw)
 
 	if app.mode != .Campaign {
 		render.text_center("Left: A W S D + Shift     Right: Arrows / J I K L", sw / 2, SETUP_Y0 + i32(len(fields)) * SETUP_DY + 16, 20, render.COLOR_TEXT_DIM)
@@ -1183,11 +1181,7 @@ draw_options :: proc(app: ^App, sw, sh: i32) {
 		fmt.tprintf("Ghost Piece: < %s >", ghost_name(app.ghost_disabled)),
 		fmt.tprintf("Next Piece:  < %s >", next_name(app.next_disabled)),
 	}
-	for r, i in rows {
-		y := OPTIONS_Y0 + i32(i) * OPTIONS_DY
-		color := i == app.options_sel ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
-		render.text_center(strings.clone(r, context.temp_allocator), sw / 2, y, 30, color)
-	}
+	draw_option_rows(rows, app.options_sel, OPTIONS_Y0, OPTIONS_DY, sw)
 	render.text_center("Up/Down or mouse   Left/Right or click changes   Enter/Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
@@ -1205,11 +1199,7 @@ draw_create_game :: proc(app: ^App, sw, sh: i32) {
 		fmt.tprintf("Public:    < %s >", public_val),
 		"CREATE",
 	}
-	for r, i in rows {
-		y := CREATE_Y0 + i32(i) * CREATE_DY
-		color := i == app.create_field ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
-		render.text_center(strings.clone(r, context.temp_allocator), sw / 2, y, 30, color)
-	}
+	draw_option_rows(rows, app.create_field, CREATE_Y0, CREATE_DY, sw)
 	render.text_center("Up/Down or click field   type to edit   click CREATE   Esc back", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 

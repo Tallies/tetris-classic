@@ -319,12 +319,7 @@ parse_frames :: proc(n: ^Net) {
 		}
 		consumed += 1 + need
 	}
-
-	if consumed > 0 {
-		remaining := n.rx[consumed:]
-		copy(n.rx[:], remaining)
-		resize(&n.rx, len(remaining))
-	}
+	compact_rx(n, consumed)
 }
 
 is_would_block :: proc(err: net.Network_Error) -> bool {
