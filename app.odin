@@ -27,6 +27,8 @@ Screen :: enum {
 	JoinPassword,// password prompt for a protected game
 	Lobby,       // waiting / connecting
 	Playing,
+	About,       // author / version / description + License / Close buttons
+	License,     // CC BY-NC-SA 4.0 summary
 }
 
 SNAPSHOT_INTERVAL :: f32(0.05) // 20 Hz opponent-pit updates
@@ -43,6 +45,7 @@ App :: struct {
 	server_sel:  int,
 	options_sel: int,
 	paused_sel:  int,
+	about_sel:   int,
 
 	mode:           game.GameMode,
 	scoring:        game.ScoringSystem,
@@ -51,6 +54,8 @@ App :: struct {
 	ghost_disabled: bool,
 	down_mode:      DownMode,
 	solo_controls:  SoloControls,
+	mouse_enabled:  bool, // mouse gameplay control (toggle with C); trackpad can interfere
+	config_dirty:   bool, // a persisted setting changed this frame; flush at frame end
 
 	// networking
 	net:            ^netplay.Net,
@@ -85,6 +90,11 @@ App :: struct {
 	prev_level:      int,
 	prev_game_over:  bool,
 
+	// recently-connected addresses (most-recent-first, cap ADDR_HISTORY_MAX),
+	// separate lists because LAN and online values rarely overlap (persisted)
+	lan_history:    [dynamic]string,
+	srv_history:    [dynamic]string,
+
 	// single-player high score (persisted)
 	high_score:     int,
 	new_high_score: bool,
@@ -114,14 +124,17 @@ run :: proc() {
 	app.scoring = .TetrisClassic
 	app.time_limit = .Unlimited
 	app.solo_controls = .All // arrows, IJKL and WASD all work out of the box
+	app.mouse_enabled = true
 	app.high_score = load_highscore()
+	config_load(&app) // restore saved settings + address history over the defaults
+	defer config_save(&app)
 
 	for !rl.WindowShouldClose() {
 		dt := rl.GetFrameTime()
 		sw := rl.GetScreenWidth()
 		sh := rl.GetScreenHeight()
 
-		handle_audio_hotkeys(&app)
+		handle_hotkeys(&app)
 		audio.update()
 		poll_connect(&app)
 
@@ -140,10 +153,19 @@ run :: proc() {
 		case .JoinPassword: update_join_password(&app)
 		case .Lobby:        update_lobby(&app)
 		case .Playing:      update_playing(&app, dt)
+		case .About:        update_about(&app)
+		case .License:      update_license(&app)
 		}
 		draw_screen(&app, sw, sh)
-		draw_audio_hint(sw, sh)
+		draw_hotkey_hint(&app, sw, sh)
 		rl.EndDrawing()
+
+		// Persist settings the moment they change (the exit-time defer can be
+		// skipped on a forced window close, so we don't rely on it alone).
+		if app.config_dirty {
+			config_save(&app)
+			app.config_dirty = false
+		}
 
 		// All temp allocations (tprintf/ctprintf strings, label slices) are
 		// frame-scoped; reclaim them so the arena doesn't grow over a session.
@@ -158,7 +180,7 @@ run :: proc() {
 // ---------------------------------------------------------------- main menu ---
 
 update_main_menu :: proc(app: ^App) {
-	count := len(game.GameMode) + 1 // modes + Quit
+	count := len(game.GameMode) + 2 // modes + About + Quit
 	app.main_sel = menu_navigate(app.main_sel, count)
 
 	activate := rl.IsKeyPressed(.ENTER)
@@ -170,6 +192,11 @@ update_main_menu :: proc(app: ^App) {
 	if activate {
 		if app.main_sel == count - 1 {
 			rl.CloseWindow() // Quit handled by WindowShouldClose next frame
+			return
+		}
+		if app.main_sel == len(game.GameMode) { // About
+			app.screen = .About
+			app.about_sel = 0
 			return
 		}
 		app.mode = game.GameMode(app.main_sel)
@@ -210,6 +237,7 @@ cycle_setup_field :: proc(app: ^App, f: SetupField, right: bool) {
 	case .Ghost:     app.ghost_disabled = !app.ghost_disabled
 	case .Controls:  app.solo_controls = SoloControls((int(app.solo_controls) + 1) % 4)
 	}
+	app.config_dirty = true
 }
 
 update_setup :: proc(app: ^App) {
@@ -342,7 +370,7 @@ start_host :: proc(app: ^App) {
 }
 
 update_net_join :: proc(app: ^App) {
-	edit_text(app.addr_buf[:], &app.addr_len)
+	update_address_field(app.addr_buf[:], &app.addr_len, app.lan_history)
 	if rl.IsKeyPressed(.ENTER) && app.addr_len > 0 {
 		start_join(app)
 	}
@@ -359,7 +387,7 @@ start_join :: proc(app: ^App) {
 // --- Online (matchmaking server) ---
 
 update_server_setup :: proc(app: ^App) {
-	edit_text(app.server_addr_buf[:], &app.server_addr_len)
+	update_address_field(app.server_addr_buf[:], &app.server_addr_len, app.srv_history)
 	if rl.IsKeyPressed(.ENTER) && app.server_addr_len > 0 {
 		app.screen = .ServerMenu
 		app.server_sel = 0
@@ -408,6 +436,7 @@ cycle_option_field :: proc(app: ^App, i: int) {
 	case 1: app.ghost_disabled = !app.ghost_disabled
 	case 2: app.next_disabled = !app.next_disabled
 	}
+	app.config_dirty = true
 }
 
 update_options :: proc(app: ^App) {
@@ -437,7 +466,7 @@ update_create_game :: proc(app: ^App) {
 		app.create_field = h
 		if clicked {
 			switch h {
-			case 2: app.create_public = !app.create_public
+			case 2: app.create_public = !app.create_public; app.config_dirty = true
 			case 3: if app.name_len > 0 do submit_create(app)
 			}
 		}
@@ -449,6 +478,7 @@ update_create_game :: proc(app: ^App) {
 	case 2:
 		if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.SPACE) {
 			app.create_public = !app.create_public
+			app.config_dirty = true
 		}
 	}
 
@@ -564,6 +594,15 @@ poll_connect :: proc(app: ^App) {
 	}
 
 	app.net = n
+	// Remember the address we just reached (separate LAN vs online lists).
+	switch app.dial_action {
+	case .Create, .Browse:
+		history_remember(&app.srv_history, string(app.server_addr_buf[:app.server_addr_len]))
+	case .LanJoin:
+		history_remember(&app.lan_history, string(app.addr_buf[:app.addr_len]))
+	}
+	config_save(app)
+
 	switch app.dial_action {
 	case .Create:
 		netplay.send_create(n,
@@ -741,7 +780,7 @@ update_playing :: proc(app: ^App, dt: f32) {
 		intents[0] = gather_awsd(app.down_mode)  // left side
 		intents[1] = gather_right(app.down_mode) // right side
 	}
-	apply_mouse_gameplay(&intents[0], app.down_mode) // mouse controls player 0
+	if app.mouse_enabled do apply_mouse_gameplay(&intents[0], app.down_mode) // mouse controls player 0 (toggle with C)
 	sfx_for_intent(intents[0])
 	if s.num_players > 1 do sfx_for_intent(intents[1])
 	game.session_update(s, dt, intents)
@@ -903,7 +942,7 @@ update_head_to_head :: proc(app: ^App, dt: f32) {
 
 	intents: [2]game.PlayerIntent
 	intents[0] = gather_solo(app.solo_controls, app.down_mode)
-	apply_mouse_gameplay(&intents[0], app.down_mode)
+	if app.mouse_enabled do apply_mouse_gameplay(&intents[0], app.down_mode)
 	sfx_for_intent(intents[0])
 	game.session_update(s, dt, intents)
 
@@ -993,23 +1032,44 @@ apply_snapshot :: proc(s: ^game.Session, sp: netplay.SnapshotPayload) {
 	p.active = true
 }
 
-// Global mute toggles. Suppressed on text-entry screens so typed letters (e.g.
-// a server address or game name) don't toggle audio.
-handle_audio_hotkeys :: proc(app: ^App) {
+// Global hotkeys (audio mute + gameplay mouse toggle). Suppressed on text-entry
+// screens so typed letters (e.g. a server address or game name) don't trigger
+// them. Any toggle marks the config dirty so it persists immediately.
+handle_hotkeys :: proc(app: ^App) {
 	#partial switch app.screen {
 	case .NetJoin, .ServerSetup, .CreateGame, .JoinPassword:
 		return
 	}
-	if rl.IsKeyPressed(.M) do audio.set_music_enabled(!audio.music_enabled())
-	if rl.IsKeyPressed(.N) do audio.set_sfx_enabled(!audio.sfx_enabled())
+	if rl.IsKeyPressed(.M) {
+		audio.set_music_enabled(!audio.music_enabled())
+		app.config_dirty = true
+	}
+	if rl.IsKeyPressed(.N) {
+		audio.set_sfx_enabled(!audio.sfx_enabled())
+		app.config_dirty = true
+	}
+	if app.screen == .Playing && rl.IsKeyPressed(.C) {
+		app.mouse_enabled = !app.mouse_enabled
+		app.config_dirty = true
+	}
 }
 
-// A small persistent reminder of the audio mute keys.
-draw_audio_hint :: proc(sw, sh: i32) {
+// A small persistent reminder of the hotkeys (mouse only shown while playing).
+draw_hotkey_hint :: proc(app: ^App, sw, sh: i32) {
 	on :: proc(b: bool) -> string { return b ? "on" : "off" }
-	txt := fmt.ctprintf("M music: %s   N sound: %s", on(audio.music_enabled()), on(audio.sfx_enabled()))
+	txt: cstring
+	if app.screen == .Playing {
+		txt = fmt.ctprintf("M music: %s   N sound: %s   C mouse: %s",
+			on(audio.music_enabled()), on(audio.sfx_enabled()), on(app.mouse_enabled))
+	} else {
+		txt = fmt.ctprintf("M music: %s   N sound: %s", on(audio.music_enabled()), on(audio.sfx_enabled()))
+	}
 	w := rl.MeasureText(txt, 16)
-	rl.DrawText(txt, sw - w - 12, sh - 22, 16, {150, 150, 165, 170})
+	x := sw - w - 12
+	y := sh - 24
+	// Dark backing so the hint stays legible over a pit/HUD (e.g. dual-pit).
+	rl.DrawRectangle(x - 6, y - 4, w + 12, 24, {0, 0, 0, 150})
+	rl.DrawText(txt, x, y, 16, {210, 210, 225, 255})
 }
 
 make_seed :: proc() -> u64 {
@@ -1025,11 +1085,12 @@ make_seed :: proc() -> u64 {
 draw_screen :: proc(app: ^App, sw, sh: i32) {
 	switch app.screen {
 	case .MainMenu:
-		items: [len(game.GameMode) + 1]string
+		items: [len(game.GameMode) + 2]string
 		for m in game.GameMode {
 			items[int(m)] = MODE_NAMES[m]
 		}
-		items[len(game.GameMode)] = "Quit"
+		items[len(game.GameMode)] = "About"
+		items[len(game.GameMode) + 1] = "Quit"
 		draw_menu_list("Select Mode", "", items[:], app.main_sel, sw, sh)
 
 	case .Setup:
@@ -1047,8 +1108,9 @@ draw_screen :: proc(app: ^App, sw, sh: i32) {
 		draw_net_join(app, sw, sh)
 
 	case .ServerSetup:
-		draw_text_entry(app, sw, sh, "MATCHMAKING SERVER", "Enter server address (host or host:port):",
-			string(app.server_addr_buf[:app.server_addr_len]), "Enter to continue   Esc back")
+		draw_address_field(app, sw, sh, "MATCHMAKING SERVER", "Enter server address (host or host:port):",
+			app.server_addr_buf[:], app.server_addr_len, app.srv_history,
+			"Tab/-> complete   Enter continue   Esc back")
 
 	case .ServerMenu:
 		items := []string{"Create Game", "Browse Games", "Options", "Back"}
@@ -1085,7 +1147,83 @@ draw_screen :: proc(app: ^App, sw, sh: i32) {
 			for o, i in opts do labels[i] = pause_label(o)
 			render.draw_pause_menu(sw, sh, labels, app.paused_sel)
 		}
+
+	case .About:
+		draw_about(app, sw, sh)
+
+	case .License:
+		draw_license(app, sw, sh)
 	}
+}
+
+// ------------------------------------------------------------------ about ---
+
+ABOUT_BUTTONS := []string{"License", "Close"}
+
+update_about :: proc(app: ^App) {
+	if rl.IsKeyPressed(.ESCAPE) {
+		app.screen = .MainMenu
+		return
+	}
+	app.about_sel = menu_navigate(app.about_sel, len(ABOUT_BUTTONS))
+
+	activate := rl.IsKeyPressed(.ENTER)
+	y0, dy := about_buttons_geom()
+	if h, clicked := mouse_rows_pick(len(ABOUT_BUTTONS), y0, dy); h >= 0 {
+		app.about_sel = h
+		if clicked do activate = true
+	}
+	if activate {
+		switch app.about_sel {
+		case 0: app.screen = .License
+		case 1: app.screen = .MainMenu
+		}
+	}
+}
+
+update_license :: proc(app: ^App) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.ENTER) {
+		app.screen = .About
+	}
+}
+
+about_buttons_geom :: proc() -> (y0, dy: i32) {
+	return i32(rl.GetScreenHeight()) - 140, 50
+}
+
+draw_about :: proc(app: ^App, sw, sh: i32) {
+	rl.DrawRectangleGradientV(0, 0, sw, sh, {20, 22, 48, 255}, {6, 6, 16, 255})
+	render.text_center("ABOUT", sw / 2, 90, 48, render.COLOR_HIGHLIGHT)
+
+	lines := []string{
+		"Author: Charl Marais",
+		fmt.tprintf("Version: %s", VERSION),
+		fmt.tprintf("Date: %s", VERSION_DATE),
+		fmt.tprintf("Description: %s", DESCRIPTION),
+		"",
+		"This game was created using Claude Code.",
+	}
+	y := i32(190)
+	for line in lines {
+		render.text_center(line, sw / 2, y, 24, render.COLOR_TEXT)
+		y += 40
+	}
+
+	y0, dy := about_buttons_geom()
+	draw_option_rows(ABOUT_BUTTONS, app.about_sel, y0, dy, sw)
+	render.text_center("Up/Down or mouse   Enter/click   Esc back", sw / 2, sh - 40, 18, render.COLOR_TEXT_DIM)
+}
+
+draw_license :: proc(app: ^App, sw, sh: i32) {
+	rl.DrawRectangleGradientV(0, 0, sw, sh, {20, 22, 48, 255}, {6, 6, 16, 255})
+	render.text_center("LICENSE", sw / 2, 80, 48, render.COLOR_HIGHLIGHT)
+
+	y := i32(170)
+	for line in strings.split_lines(LICENSE_SUMMARY, context.temp_allocator) {
+		render.text_center(line, sw / 2, y, 20, render.COLOR_TEXT)
+		y += 30
+	}
+	render.text_center("Esc back   Full text in the LICENSE file", sw / 2, sh - 50, 18, render.COLOR_TEXT_DIM)
 }
 
 draw_setup :: proc(app: ^App, sw, sh: i32) {
@@ -1105,19 +1243,10 @@ draw_setup :: proc(app: ^App, sw, sh: i32) {
 }
 
 draw_net_join :: proc(app: ^App, sw, sh: i32) {
-	rl.DrawRectangleGradientV(0, 0, sw, sh, {16, 32, 56, 255}, {6, 6, 16, 255})
-	render.text_center("JOIN GAME", sw / 2, 120, 48, render.COLOR_HIGHLIGHT)
-	render.text_center("Enter host address (IP or hostname):", sw / 2, 230, 24, render.COLOR_TEXT)
-
-	addr := app.addr_len > 0 ? string(app.addr_buf[:app.addr_len]) : "_"
-	box_w := i32(500)
-	bx := sw / 2 - box_w / 2
-	rl.DrawRectangleRec({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, {0, 0, 0, 140})
-	rl.DrawRectangleLinesEx({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, 2, render.COLOR_BORDER)
-	render.text_field(addr, bx + 16, sh / 2 - 14, box_w - 32, 28, render.COLOR_TEXT)
-
-	render.text_center(fmt.tprintf("Port %d", netplay.DEFAULT_PORT), sw / 2, sh / 2 + 60, 20, render.COLOR_TEXT_DIM)
-	render.text_center("Enter to connect   Esc back", sw / 2, sh - 60, 20, render.COLOR_TEXT_DIM)
+	draw_address_field(app, sw, sh, "JOIN GAME",
+		fmt.tprintf("Enter host address (host or host:port, default port %d):", netplay.DEFAULT_PORT),
+		app.addr_buf[:], app.addr_len, app.lan_history,
+		"Tab/-> complete   Enter connect   Esc back")
 }
 
 // --- shared input + drawing helpers for the online screens ---
@@ -1167,6 +1296,78 @@ draw_text_entry :: proc(app: ^App, sw, sh: i32, title, prompt: string, value: st
 	rl.DrawRectangleRec({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, {0, 0, 0, 140})
 	rl.DrawRectangleLinesEx({f32(bx), f32(sh / 2 - 30), f32(box_w), 60}, 2, render.COLOR_BORDER)
 	render.text_field(shown, bx + 16, sh / 2 - 14, box_w - 32, 28, render.COLOR_TEXT)
+
+	render.text_center(hint, sw / 2, sh - 60, 20, render.COLOR_TEXT_DIM)
+}
+
+// --- address entry with last-connected autocomplete (LAN + online) ---
+
+// Case-insensitive prefix test, no allocation.
+has_prefix_fold :: proc(s, prefix: string) -> bool {
+	if len(prefix) > len(s) do return false
+	return strings.equal_fold(s[:len(prefix)], prefix)
+}
+
+// History entries that start with `prefix` (order preserved). Empty prefix
+// returns the whole history. Result lives in the temp allocator.
+filter_history :: proc(history: [dynamic]string, prefix: string) -> [dynamic]string {
+	out := make([dynamic]string, 0, len(history), context.temp_allocator)
+	for a in history {
+		if prefix == "" || has_prefix_fold(a, prefix) do append(&out, a)
+	}
+	return out
+}
+
+// Dropdown row geometry (below the entry box), shared by update + draw.
+addr_dropdown_geom :: proc(sh: i32) -> (y0, dy: i32) {
+	return sh / 2 + 44, 30
+}
+
+// Typing + autocomplete behaviour for an address field. Tab / Right completes
+// to the top match; clicking a dropdown row selects it. Enter stays with the
+// caller (it means different things per screen).
+update_address_field :: proc(buf: []u8, length: ^int, history: [dynamic]string) {
+	edit_text(buf, length)
+	matches := filter_history(history, string(buf[:length^]))
+	if len(matches) > 0 && (rl.IsKeyPressed(.TAB) || rl.IsKeyPressed(.RIGHT)) {
+		set_buf(buf, length, matches[0])
+		return
+	}
+	y0, dy := addr_dropdown_geom(i32(rl.GetScreenHeight()))
+	if h, clicked := mouse_rows_pick(len(matches), y0, dy); h >= 0 && clicked {
+		set_buf(buf, length, matches[h])
+	}
+}
+
+// Entry box with inline ghost-text completion and a dropdown of matches.
+draw_address_field :: proc(app: ^App, sw, sh: i32, title, prompt: string, buf: []u8, length: int, history: [dynamic]string, hint: string) {
+	rl.DrawRectangleGradientV(0, 0, sw, sh, {16, 32, 56, 255}, {6, 6, 16, 255})
+	render.text_center(title, sw / 2, 120, 48, render.COLOR_HIGHLIGHT)
+	render.text_center(prompt, sw / 2, 230, 24, render.COLOR_TEXT)
+
+	value := string(buf[:length])
+	shown := length > 0 ? value : "_"
+	box_w := i32(500)
+	bx := sw / 2 - box_w / 2
+	by := sh / 2 - 30
+	rl.DrawRectangleRec({f32(bx), f32(by), f32(box_w), 60}, {0, 0, 0, 140})
+	rl.DrawRectangleLinesEx({f32(bx), f32(by), f32(box_w), 60}, 2, render.COLOR_BORDER)
+	render.text_field(shown, bx + 16, by + 16, box_w - 32, 28, render.COLOR_TEXT)
+
+	matches := filter_history(history, value)
+
+	// Inline ghost-text: the remainder of the top match after what was typed.
+	if length > 0 && len(matches) > 0 && len(matches[0]) > length {
+		tx := bx + 16 + rl.MeasureText(fmt.ctprintf("%s", value), 28)
+		rl.DrawText(fmt.ctprintf("%s", matches[0][length:]), tx, by + 16, 28, render.COLOR_TEXT_DIM)
+	}
+
+	// Dropdown of matches (full history when the field is empty).
+	y0, dy := addr_dropdown_geom(sh)
+	for m, i in matches {
+		col := row_hovered(i, y0, dy) ? render.COLOR_HIGHLIGHT : render.COLOR_TEXT_DIM
+		render.text_center(strings.clone(m, context.temp_allocator), sw / 2, y0 + i32(i) * dy, 22, col)
+	}
 
 	render.text_center(hint, sw / 2, sh - 60, 20, render.COLOR_TEXT_DIM)
 }
